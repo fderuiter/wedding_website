@@ -2157,7 +2157,7 @@ export function CsvImportWizardModal({
       }
       className="max-w-4xl"
     >
-      <div className="space-y-6 max-h-[80vh] overflow-y-auto pr-1">
+      <div className="space-y-6 pr-1">
         {/* Step Indicator */}
         <nav aria-label="Import progress">
           <ol className="flex justify-between items-center text-xs font-semibold border-b pb-3 text-gray-500 dark:text-zinc-400 border-gray-200 dark:border-zinc-800">

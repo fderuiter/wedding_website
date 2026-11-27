@@ -23330,6 +23330,197 @@
         }
       }
     },
+    "/api/guest/recover": {
+      "get": {
+        "tags": [
+          "Guest"
+        ],
+        "summary": "GET /api/guest/recover",
+        "description": "Endpoint for /api/guest/recover",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "messagingActive": {
+                          "type": "boolean"
+                        },
+                        "emailActive": {
+                          "type": "boolean"
+                        },
+                        "smsActive": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "messagingActive",
+                        "emailActive",
+                        "smsActive"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Guest"
+        ],
+        "summary": "POST /api/guest/recover",
+        "description": "Endpoint for /api/guest/recover",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "identifier": {
+                    "type": "string",
+                    "maxLength": 255
+                  },
+                  "query": {
+                    "type": "string",
+                    "maxLength": 255
+                  },
+                  "name": {
+                    "type": "string",
+                    "maxLength": 255
+                  },
+                  "email": {
+                    "type": "string",
+                    "maxLength": 255
+                  },
+                  "website": {
+                    "type": "string",
+                    "maxLength": 255
+                  },
+                  "honeypot": {
+                    "type": "string",
+                    "maxLength": 255
+                  },
+                  "hp_field": {
+                    "type": "string",
+                    "maxLength": 255
+                  },
+                  "confirm_email": {
+                    "type": "string",
+                    "maxLength": 255
+                  }
+                },
+                "description": "Public guest sign-in link recovery request payload accepting an email address or full first and last name plus optional honeypot fields."
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/guest/session": {
       "get": {
         "tags": [

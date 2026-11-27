@@ -1014,4 +1014,38 @@ describe('PhotoGalleryClient', () => {
     expect(guestThumb).toHaveAttribute('aria-label', 'View Champagne Toast');
     expect(await axe(container)).toHaveNoViolations();
   });
+
+  it('isolates background landmarks with inert and pulls outside focus back into lightbox on Tab', () => {
+    render(
+      <main>
+        <h1>Gallery</h1>
+        <PhotoGalleryClient
+          initialPhotos={[
+            { id: 'p-1', url: '/uploads/1.jpg', title: 'Photo One' },
+            { id: 'p-2', url: '/uploads/2.jpg', title: 'Photo Two' },
+          ]}
+        />
+      </main>
+    );
+
+    const mainEl = screen.getByRole('main');
+    fireEvent.click(screen.getByTestId('photo-thumbnail-0'));
+
+    expect(mainEl.closest('[inert]')).not.toBeNull();
+    expect(Array.from(document.body.children).some((el) => el.hasAttribute('inert'))).toBe(true);
+    const closeBtn = screen.getByTestId('lightbox-close-btn');
+    const nextBtn = screen.getByTestId('lightbox-next-btn');
+    expect(closeBtn).toHaveFocus();
+
+    // Simulate focus dropping outside the modal onto document.body, then press Tab
+    closeBtn.blur();
+    expect(document.activeElement).toBe(document.body);
+
+    fireEvent.keyDown(window, { key: 'Tab' });
+    expect(closeBtn).toHaveFocus();
+
+    closeBtn.blur();
+    fireEvent.keyDown(window, { key: 'Tab', shiftKey: true });
+    expect(nextBtn).toHaveFocus();
+  });
 });

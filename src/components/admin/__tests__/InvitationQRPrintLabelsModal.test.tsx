@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { axe, toHaveNoViolations } from 'jest-axe';
 import { InvitationQRPrintLabelsModal } from '../InvitationQRPrintLabelsModal';
@@ -233,5 +234,38 @@ describe('InvitationQRPrintLabelsModal Component', () => {
         },
       })
     ).toHaveNoViolations();
+  });
+
+  it('exposes tabIndex=0 on scrollable print sheet, sets inert on background landmarks, and restores trigger focus on Escape', () => {
+    function Wrapper() {
+      const [open, setOpen] = useState(false);
+      return (
+        <main>
+          <button type="button" onClick={() => setOpen(true)}>
+            Launch Print Labels
+          </button>
+          <InvitationQRPrintLabelsModal
+            isOpen={open}
+            onClose={() => setOpen(false)}
+            codes={sampleCodes}
+          />
+        </main>
+      );
+    }
+
+    render(<Wrapper />);
+    const main = screen.getByRole('main');
+    const launchBtn = screen.getByRole('button', { name: 'Launch Print Labels' });
+    launchBtn.focus();
+    fireEvent.click(launchBtn);
+
+    expect(main.closest('[inert]')).not.toBeNull();
+    expect(Array.from(document.body.children).some((el) => el.hasAttribute('inert'))).toBe(true);
+    const printSheet = screen.getByTestId('qr-print-sheet');
+    expect(printSheet).toHaveAttribute('tabindex', '0');
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(main.closest('[inert]')).toBeNull();
+    expect(launchBtn).toHaveFocus();
   });
 });

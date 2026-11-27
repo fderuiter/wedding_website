@@ -334,4 +334,91 @@ describe('ThingsToDoMap', () => {
       screen.getByRole('link', { name: 'Directions to The Glasshouse (opens in a new tab)' })
     ).toHaveAttribute('href', 'https://www.google.com/maps/dir/?api=1&destination=45.2,-90.2');
   });
+
+  it('moves focus into opened venue and attraction popups and restores focus to originating marker on close', () => {
+    type PopupPayload = {
+      popup: {
+        getElement: () => HTMLElement;
+        _source: { getElement: () => HTMLElement };
+      };
+    };
+    type MapWithEvents = typeof mockMap & {
+      on?: (event: string, cb: (ev: PopupPayload) => void) => void;
+      off?: (event: string, cb: (ev: PopupPayload) => void) => void;
+      closePopup?: jest.Mock;
+    };
+    const typedMockMap = mockMap as MapWithEvents;
+    const listeners: Record<string, Array<(event: PopupPayload) => void>> = {};
+    const originalOn = typedMockMap.on;
+    const originalOff = typedMockMap.off;
+    const originalClosePopup = typedMockMap.closePopup;
+    const originalRaf = window.requestAnimationFrame;
+    const originalCancelRaf = window.cancelAnimationFrame;
+
+    typedMockMap.on = jest.fn((event: string, cb: (ev: PopupPayload) => void) => {
+      listeners[event] = listeners[event] ?? [];
+      listeners[event].push(cb);
+    });
+    typedMockMap.off = jest.fn((event: string, cb: (ev: PopupPayload) => void) => {
+      listeners[event] = (listeners[event] ?? []).filter((fn) => fn !== cb);
+    });
+    const closePopupMock = jest.fn();
+    typedMockMap.closePopup = closePopupMock;
+    window.requestAnimationFrame = ((cb: FrameRequestCallback) => {
+      cb(0);
+      return 1;
+    }) as typeof window.requestAnimationFrame;
+    window.cancelAnimationFrame = jest.fn();
+
+    try {
+      const { unmount } = render(<ThingsToDoMap attractions={attractions} />);
+
+      const markerEl = document.createElement('div');
+      markerEl.className = 'leaflet-marker-icon';
+      markerEl.tabIndex = 0;
+      document.body.appendChild(markerEl);
+
+      const popupEl = document.createElement('div');
+      popupEl.className = 'leaflet-popup';
+      popupEl.innerHTML =
+        '<div class="leaflet-popup-content"><a href="https://maps.example.com">Directions</a></div><a class="leaflet-popup-close-button" href="#close">×</a>';
+      document.body.appendChild(popupEl);
+
+      const directionsLink = popupEl.querySelector('a') as HTMLAnchorElement;
+      markerEl.focus();
+      expect(markerEl).toHaveFocus();
+
+      const fakePopup = {
+        getElement: () => popupEl,
+        _source: { getElement: () => markerEl },
+      };
+
+      for (const handler of listeners.popupopen ?? []) {
+        handler({ popup: fakePopup });
+      }
+      expect(directionsLink).toHaveFocus();
+
+      // Escape inside popup triggers map.closePopup
+      directionsLink.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+      );
+      expect(closePopupMock).toHaveBeenCalledWith(fakePopup);
+
+      // Closing popup restores focus to originating marker
+      popupEl.remove();
+      for (const handler of listeners.popupclose ?? []) {
+        handler({ popup: fakePopup });
+      }
+      expect(markerEl).toHaveFocus();
+
+      markerEl.remove();
+      unmount();
+    } finally {
+      typedMockMap.on = originalOn;
+      typedMockMap.off = originalOff;
+      typedMockMap.closePopup = originalClosePopup;
+      window.requestAnimationFrame = originalRaf;
+      window.cancelAnimationFrame = originalCancelRaf;
+    }
+  });
 });

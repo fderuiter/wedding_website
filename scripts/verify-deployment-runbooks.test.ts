@@ -42,6 +42,8 @@ function copyRepoFixture(srcRoot: string, destRoot: string): void {
     'docs/deployment/docker-vps.md',
     'docs/deployment/railway-render.md',
     'scripts/generate-docs.ts',
+    'scripts/build-pages-bundle.mjs',
+    'e2e/pages-showcase.spec.ts',
     'docker/prisma-cli/package.json',
     '.github/dependabot.yml',
   ];
@@ -1370,6 +1372,37 @@ describe('verify-deployment-runbooks', () => {
         ),
         expect.stringContaining(
           'scripts/rollout-vps.sh: Exit trap must track `pre-cutover`, `cutover`, and `completed` rollout phases'
+        ),
+      ])
+    );
+  });
+
+  it('rejects hardcoded /wedding_website base-path gates in .github/workflows/ci.yml and e2e/pages-showcase.spec.ts or missing verify Pages outputs', () => {
+    const ciPath = path.join(tempDir, '.github/workflows/ci.yml');
+    const brokenCi = fs
+      .readFileSync(ciPath, 'utf8')
+      .replace(
+        'VITEPRESS_BASE: ${{ steps.resolve-pages-base-paths.outputs.portal_base_path }}',
+        'VITEPRESS_BASE: /wedding_website/'
+      )
+      .replace(/portal_base_path:/g, 'removed_portal_output:');
+    fs.writeFileSync(ciPath, brokenCi);
+
+    const specPath = path.join(tempDir, 'e2e/pages-showcase.spec.ts');
+    const brokenSpec = `${fs.readFileSync(specPath, 'utf8')}\n// Regression: '/wedding_website/demo'\n`;
+    fs.writeFileSync(specPath, brokenSpec);
+
+    const errors = verifyDeploymentRunbooks(tempDir);
+    expect(errors).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining(
+          '.github/workflows/ci.yml: Must not hardcode `/wedding_website` base-path gates'
+        ),
+        expect.stringContaining(
+          '.github/workflows/ci.yml: `verify` job must export `outputs.portal_base_path`'
+        ),
+        expect.stringContaining(
+          'e2e/pages-showcase.spec.ts: Must not hardcode `/wedding_website` base-path strings'
         ),
       ])
     );

@@ -227,6 +227,117 @@ export class BroadcastService {
     });
   }
 
+  /**
+   * Dispatches a personalized one-click `/guest?code=` sign-in link to a matched
+   * invited household via the active email or SMS provider, enforcing per-household
+   * send cooldowns and skipping sample / address-collection records.
+   */
+  static async requestGuestSignInRecoveryLink(params: {
+    parsedIdentifier: import('@/utils/guestSignInRecovery').ParsedRecoveryIdentifier;
+    config?: Record<string, any> | null;
+    requestOrigin?: string;
+    nowMs?: number;
+  }): Promise<{ dispatched: boolean; channel?: BroadcastChannel }> {
+    const {
+      findUnambiguousRecoverableInvitation,
+      isEmailProviderActive,
+      isHouseholdOnRecoveryCooldown,
+      isSmsProviderActive,
+      markHouseholdRecoverySent,
+    } = await import('@/utils/guestSignInRecovery');
+
+    const config = params.config ?? (await getAppConfig());
+    const emailActive = isEmailProviderActive(config);
+    const smsActive = isSmsProviderActive(config);
+    if (!emailActive && !smsActive) {
+      return { dispatched: false };
+    }
+
+    const candidates = await prisma.invitationCode.findMany({
+      where: {
+        isSample: false,
+      },
+      include: {
+        members: {
+          orderBy: { displayOrder: 'asc' },
+        },
+      },
+    });
+
+    const matched = findUnambiguousRecoverableInvitation(candidates, params.parsedIdentifier);
+    if (!matched) {
+      return { dispatched: false };
+    }
+
+    const { invitation, preferredEmail } = matched;
+    const cooldownKey = invitation.id || invitation.code.trim().toUpperCase();
+    const nowMs = params.nowMs ?? Date.now();
+    if (isHouseholdOnRecoveryCooldown(cooldownKey, nowMs)) {
+      return { dispatched: false };
+    }
+
+    const resolvedEmail = preferredEmail || getGuestEmail(invitation);
+    const resolvedPhone = getGuestPhone(invitation);
+
+    let channel: BroadcastChannel | null = null;
+    let destination: string | null = null;
+
+    if (emailActive && resolvedEmail) {
+      channel = 'EMAIL';
+      destination = resolvedEmail;
+    } else if (smsActive && resolvedPhone) {
+      channel = 'SMS';
+      destination = resolvedPhone;
+    }
+
+    if (!channel || !destination) {
+      return { dispatched: false };
+    }
+
+    const { baseUrl } = resolveBroadcastBaseUrl(config?.baseUrl, params.requestOrigin);
+    const emailTemplateBody = [
+      'Hello {{guestName}},',
+      '',
+      'Here is your personal one-click sign-in link to access the Guest Portal, submit or update your RSVPs, and review your household details for {{coupleNames}}:',
+      '',
+      '{{rsvpUrl}}',
+      '',
+      'Open the link above on any device to sign in automatically. If you did not request this link, you can safely ignore this message.',
+    ].join('\n');
+    const smsTemplateBody =
+      '{{coupleNames}}: Open your personal one-click Guest Portal & RSVP sign-in link for {{guestName}}: {{rsvpUrl}}';
+
+    const rendered = this.renderMessageContent({
+      guest: {
+        guestName: invitation.guestName,
+        code: invitation.code,
+        householdName: invitation.householdName,
+      },
+      config,
+      baseUrl,
+      channel,
+      body: channel === 'EMAIL' ? emailTemplateBody : smsTemplateBody,
+      subject: channel === 'EMAIL' ? 'Your Guest Portal Sign-In Link — {{coupleNames}}' : undefined,
+    });
+
+    const provider = new MultiChannelMessagingProvider(config);
+    const result = await this.dispatchChannelMessage(
+      provider,
+      channel,
+      destination,
+      rendered.body,
+      rendered.subject
+    );
+
+    if (!result.success) {
+      console.error('[BroadcastService] Guest sign-in link recovery dispatch failed:', result.error);
+      return { dispatched: false };
+    }
+
+    markHouseholdRecoverySent(cooldownKey, undefined, nowMs);
+    return { dispatched: true, channel };
+  }
+
   private static deriveBroadcastStatus(
     sentCount: number,
     failedCount: number

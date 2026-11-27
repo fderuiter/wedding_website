@@ -97,14 +97,14 @@ describe('SessionRecoveryModal', () => {
         })
     );
 
-    const { container } = render(
+    const { baseElement } = render(
       <GuestSessionProvider>
         <SessionRecoveryModal isOpen={true} />
       </GuestSessionProvider>
     );
 
     const input = screen.getByLabelText(/Invitation Code/i) as HTMLInputElement;
-    const label = container.querySelector('label[for="recovery-invitation-code"]');
+    const label = baseElement.querySelector('label[for="recovery-invitation-code"]');
 
     expect(input).toBeRequired();
     expect(input).toHaveAttribute('aria-required', 'true');
@@ -132,6 +132,6 @@ describe('SessionRecoveryModal', () => {
     expect(input).not.toHaveAttribute('readonly');
     expect(document.activeElement).toBe(input);
 
-    expect(await axe(container)).toHaveNoViolations();
+    expect(await axe(screen.getByRole('dialog'))).toHaveNoViolations();
   });
 });

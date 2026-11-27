@@ -104,7 +104,7 @@ export const InvitationQRPreviewModal: React.FC<InvitationQRPreviewModalProps> =
       isOpen={isOpen}
       onClose={onClose}
       title="Guest Invitation QR Preview"
-      className="max-w-md w-full p-6"
+      className="max-w-md w-full"
     >
       <div className="space-y-5">
         {/* Guest Summary Header */}

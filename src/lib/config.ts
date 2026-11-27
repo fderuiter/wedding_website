@@ -19,6 +19,7 @@ import {
   evaluateRsvpCutoff,
   sanitizeRsvpClosedMessage,
 } from '../utils/rsvpDeadline';
+import { isOutboundMessagingActive } from '../utils/guestSignInRecovery';
 import { headers } from 'next/headers';
 
 import { DEFAULT_MODULE_CONFIG, resolveModuleConfig } from './modules';
@@ -453,13 +454,23 @@ export function toPublicAppConfig<T extends AppConfigDTO | Record<string, any>>(
 
   const picked: Record<string, unknown> = {};
   for (const key of PUBLIC_APP_CONFIG_KEYS) {
-    if (key in config && key !== 'multisiteEnabled' && key !== 'isRsvpOpen') {
+    if (
+      key in config &&
+      key !== 'multisiteEnabled' &&
+      key !== 'isRsvpOpen' &&
+      key !== 'isMessagingActive'
+    ) {
       picked[key] = (config as Record<string, unknown>)[key];
     }
   }
   const rsvpEvaluation = evaluateRsvpCutoff(config as Record<string, any>);
+  const messagingActive =
+    typeof (config as Record<string, unknown>).isMessagingActive === 'boolean'
+      ? Boolean((config as Record<string, unknown>).isMessagingActive)
+      : isOutboundMessagingActive(config as Record<string, any>);
   picked.multisiteEnabled = isMultisiteEnabled();
   picked.isRsvpOpen = rsvpEvaluation.isOpen;
+  picked.isMessagingActive = messagingActive;
   if (typeof picked.rsvpClosedMessage === 'string') {
     picked.rsvpClosedMessage = sanitizeRsvpClosedMessage(
       picked.rsvpClosedMessage,
@@ -477,9 +488,15 @@ export function toPublicAppConfig<T extends AppConfigDTO | Record<string, any>>(
   const partialSanitized: Record<string, unknown> = {
     multisiteEnabled: isMultisiteEnabled(),
     isRsvpOpen: rsvpEvaluation.isOpen,
+    isMessagingActive: messagingActive,
   };
   for (const key of PUBLIC_APP_CONFIG_KEYS) {
-    if (key === 'multisiteEnabled' || key === 'isRsvpOpen' || !(key in picked))
+    if (
+      key === 'multisiteEnabled' ||
+      key === 'isRsvpOpen' ||
+      key === 'isMessagingActive' ||
+      !(key in picked)
+    )
       continue;
     const fieldSchema = PublicAppConfigSchema.shape[key];
     const fieldResult = fieldSchema.safeParse(picked[key]);

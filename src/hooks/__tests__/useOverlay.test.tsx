@@ -243,4 +243,61 @@ describe('useOverlay', () => {
     expect(onClose).not.toHaveBeenCalled();
     expect(subjectInput).toHaveFocus();
   });
+
+  test('includes trailing aria-disabled="true" busy controls in Tab wrapping so focus never escapes modal', () => {
+    render(
+      <Dialog isOpen={true} onClose={jest.fn()} title="Busy Action Modal">
+        <input aria-label="Passcode" defaultValue="WED2026" />
+        <button type="button" aria-disabled="true" aria-busy="true">
+          Access Portal
+        </button>
+      </Dialog>
+    );
+
+    const passcodeInput = screen.getByLabelText('Passcode');
+    const busySubmitBtn = screen.getByRole('button', { name: 'Access Portal' });
+
+    expect(passcodeInput).toHaveFocus();
+
+    // Shift+Tab from first element wraps to trailing aria-disabled button
+    fireEvent.keyDown(document, { key: 'Tab', shiftKey: true });
+    expect(busySubmitBtn).toHaveFocus();
+
+    // Tab from trailing aria-disabled button wraps back to first element inside modal
+    fireEvent.keyDown(document, { key: 'Tab', shiftKey: false });
+    expect(passcodeInput).toHaveFocus();
+  });
+
+  test('recovers focus inside the active dialog when the currently focused control unmounts', () => {
+    function StepModal() {
+      const [step, setStep] = useState<'one' | 'two'>('one');
+      return (
+        <Dialog isOpen={true} onClose={jest.fn()} title="Multi-Step Dialog">
+          {step === 'one' ? (
+            <button type="button" onClick={() => setStep('two')}>
+              Continue to Step 2
+            </button>
+          ) : (
+            <div>
+              <button type="button" onClick={() => setStep('one')}>
+                Back to Step 1
+              </button>
+              <button type="button">Finish</button>
+            </div>
+          )}
+        </Dialog>
+      );
+    }
+
+    render(<StepModal />);
+    const dialog = screen.getByRole('dialog', { name: 'Multi-Step Dialog' });
+    const continueBtn = screen.getByRole('button', { name: 'Continue to Step 2' });
+    continueBtn.focus();
+    expect(continueBtn).toHaveFocus();
+
+    fireEvent.click(continueBtn);
+
+    expect(dialog.contains(document.activeElement)).toBe(true);
+    expect(screen.getByRole('button', { name: 'Back to Step 1' })).toHaveFocus();
+  });
 });

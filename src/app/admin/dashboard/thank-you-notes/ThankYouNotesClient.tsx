@@ -20,7 +20,7 @@ import {
   resolveAddressCollectionMatches,
   type AddressCollectionMatchResult,
 } from '@/utils/invitationValidation';
-import { useOverlay } from '@/hooks/useOverlay';
+import { useMenuPopup } from '@/hooks/useMenuPopup';
 import { useMenuNavigation } from '@/hooks/useMenuNavigation';
 import { withBasePath } from '@/lib/basePath';
 import { downloadExportBlob } from '@/utils/exportDownload';
@@ -420,11 +420,10 @@ export default function ThankYouNotesPage() {
   const exportTriggerRef = useRef<HTMLButtonElement>(null);
   const labelMenuButtonId = useId();
 
-  const { overlayRef } = useOverlay(
+  const { menuRef: overlayRef } = useMenuPopup(
     isLabelDropdownOpen,
     () => {
       setIsLabelDropdownOpen(false);
-      exportTriggerRef.current?.focus();
     },
     { triggerRef: exportTriggerRef }
   );
@@ -1155,7 +1154,7 @@ export default function ThankYouNotesPage() {
               onKeyDown={handleTriggerKeyDown}
               aria-expanded={isLabelDropdownOpen}
               aria-haspopup="true"
-              aria-controls="export-labels-menu"
+              aria-controls={isLabelDropdownOpen ? 'export-labels-menu' : undefined}
             >
               Export Address Labels ▾
             </Button>
