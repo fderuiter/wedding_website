@@ -3,9 +3,15 @@ import os from 'node:os';
 import path from 'node:path';
 import {
   buildPagesBundle,
+  formatPagesBasePathsOutput,
   normalizePagesBasePath,
+  parseCliArgs,
   resolveDemoBasePath,
   resolvePagesBundleConfig,
+  resolvePagesPrefixes,
+  resolveRepositoryPagesBasePath,
+  resolveStorybookBasePath,
+  runPagesCli,
 } from './build-pages-bundle.mjs';
 
 describe('build-pages-bundle', () => {
@@ -21,6 +27,167 @@ describe('build-pages-bundle', () => {
     expect(resolveDemoBasePath('/')).toBe('/demo');
     expect(resolveDemoBasePath('/wedding_website/')).toBe('/wedding_website/demo');
     expect(resolveDemoBasePath('custom-preview')).toBe('/custom-preview/demo');
+  });
+
+  it('resolves Storybook base path without trailing slash for NEXT_PUBLIC_BASE_PATH', () => {
+    expect(resolveStorybookBasePath('/')).toBe('/storybook');
+    expect(resolveStorybookBasePath('/wedding_website/')).toBe('/wedding_website/storybook');
+    expect(resolveStorybookBasePath('smith-wedding')).toBe('/smith-wedding/storybook');
+  });
+
+  it('resolves aligned portal, demo, and Storybook prefixes across topologies', () => {
+    expect(resolvePagesPrefixes('/')).toEqual({
+      portalBasePath: '/',
+      demoBasePath: '/demo',
+      storybookBasePath: '/storybook',
+    });
+    expect(resolvePagesPrefixes('/wedding_website/')).toEqual({
+      portalBasePath: '/wedding_website/',
+      demoBasePath: '/wedding_website/demo',
+      storybookBasePath: '/wedding_website/storybook',
+    });
+    expect(resolvePagesPrefixes('smith-wedding')).toEqual({
+      portalBasePath: '/smith-wedding/',
+      demoBasePath: '/smith-wedding/demo',
+      storybookBasePath: '/smith-wedding/storybook',
+    });
+  });
+
+  it('resolves repository Pages base paths across default repo, forks, user sites, CNAME files, and Pages API metadata', () => {
+    const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'pages-repo-resolve-'));
+    try {
+      // 1. Default template repository
+      expect(
+        resolveRepositoryPagesBasePath({
+          rootDir: tmpRoot,
+          repository: 'fderuiter/wedding_website',
+          env: {},
+        })
+      ).toBe('/wedding_website/');
+
+      // 2. Renamed fork without Pages enabled yet (404 / empty API JSON)
+      expect(
+        resolveRepositoryPagesBasePath({
+          rootDir: tmpRoot,
+          repository: 'smiths/smith-wedding',
+          pagesApiJson: '',
+          env: {},
+        })
+      ).toBe('/smith-wedding/');
+
+      // 3. Renamed fork with Pages API html_url
+      expect(
+        resolveRepositoryPagesBasePath({
+          rootDir: tmpRoot,
+          repository: 'smiths/smith-wedding',
+          pagesApiJson: JSON.stringify({
+            cname: null,
+            html_url: 'https://smiths.github.io/smith-wedding/',
+          }),
+          env: {},
+        })
+      ).toBe('/smith-wedding/');
+
+      // 4. User/organization site (<owner>.github.io, case-insensitive)
+      expect(
+        resolveRepositoryPagesBasePath({
+          rootDir: tmpRoot,
+          repository: 'Smiths/smiths.github.io',
+          env: {},
+        })
+      ).toBe('/');
+
+      // 5. Pages API custom domain cname
+      expect(
+        resolveRepositoryPagesBasePath({
+          rootDir: tmpRoot,
+          repository: 'smiths/smith-wedding',
+          pagesApiJson: JSON.stringify({
+            cname: 'wedding.example.com',
+            html_url: 'https://wedding.example.com/',
+          }),
+          env: {},
+        })
+      ).toBe('/');
+
+      // 6. CNAME files (CNAME, public/CNAME, docs-portal/public/CNAME)
+      for (const cnameRel of ['CNAME', 'public/CNAME', 'docs-portal/public/CNAME']) {
+        const fullCname = path.join(tmpRoot, cnameRel);
+        fs.mkdirSync(path.dirname(fullCname), { recursive: true });
+        fs.writeFileSync(fullCname, 'wedding.example.com\n', 'utf8');
+        expect(
+          resolveRepositoryPagesBasePath({
+            rootDir: tmpRoot,
+            repository: 'smiths/smith-wedding',
+            env: {},
+          })
+        ).toBe('/');
+        fs.rmSync(fullCname, { force: true });
+      }
+    } finally {
+      fs.rmSync(tmpRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('runs CLI resolver mode for $GITHUB_OUTPUT and JSON without executing sub-builds', () => {
+    const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'pages-cli-test-'));
+    try {
+      let stdout = '';
+      const prefixes = runPagesCli(
+        ['--resolve-base-paths', '--repo', 'smiths/smith-wedding'],
+        {
+          rootDir: tmpRoot,
+          env: {},
+          writeStdout: (chunk: string) => {
+            stdout += chunk;
+          },
+        }
+      );
+
+      expect(prefixes).toEqual({
+        portalBasePath: '/smith-wedding/',
+        demoBasePath: '/smith-wedding/demo',
+        storybookBasePath: '/smith-wedding/storybook',
+      });
+      expect(stdout).toBe(
+        [
+          'portal_base_path=/smith-wedding/',
+          'demo_base_path=/smith-wedding/demo',
+          'storybook_base_path=/smith-wedding/storybook',
+          '',
+        ].join('\n')
+      );
+
+      // Explicit empty --base-path="" (as emitted by actions/configure-pages on custom domains)
+      let rootOut = '';
+      runPagesCli(['--print-base-paths', '--base-path', '', '--json'], {
+        rootDir: tmpRoot,
+        env: { GH_REPO: 'fderuiter/wedding_website' },
+        writeStdout: (chunk: string) => {
+          rootOut += chunk;
+        },
+      });
+      expect(JSON.parse(rootOut)).toEqual({
+        portal_base_path: '/',
+        demo_base_path: '/demo',
+        storybook_base_path: '/storybook',
+      });
+
+      expect(parseCliArgs(['--resolve-base-paths', '--base-path=/custom', '--format=json'])).toMatchObject({
+        resolveOnly: true,
+        pagesBasePath: '/custom',
+        format: 'json',
+      });
+      expect(
+        formatPagesBasePathsOutput({
+          portalBasePath: '/',
+          demoBasePath: '/demo',
+          storybookBasePath: '/storybook',
+        })
+      ).toContain('portal_base_path=/\ndemo_base_path=/demo\nstorybook_base_path=/storybook\n');
+    } finally {
+      fs.rmSync(tmpRoot, { recursive: true, force: true });
+    }
   });
 
   it('resolves bundle config from options', () => {
