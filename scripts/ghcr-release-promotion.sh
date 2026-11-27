@@ -80,7 +80,11 @@ extract_subject_spdx_sbom() {
         | (.verificationResult.signature.certificate.sourceRepositoryRef // "") as $cert_ref
         | select(($cert_ref == "") or ($cert_ref | test($ref_re)))
         | (.verificationResult.statement.predicate // .statement.predicate // .predicate // empty)
-        | select(type == "object" and (.spdxVersion | type == "string") and (.packages | type == "array"))
+        | select(
+            type == "object" and
+            (.spdxVersion | type == "string" and length > 0) and
+            (.packages | type == "array" and length > 0)
+          )
       ][0] // empty
     ' 2>/dev/null || true)
     if [ -n "$extracted" ]; then
@@ -337,6 +341,136 @@ cmd_mirror_promoted_digests() {
   fi
 }
 
+cmd_extract_release_sboms() {
+  local sbom_dir="${RELEASE_SBOM_DIR:-/tmp/release-bundle/assets}"
+  mkdir -p "$sbom_dir"
+
+  local tag_name="${TAG_NAME:-}"
+  if [[ ! "$tag_name" =~ ^v[0-9][a-zA-Z0-9_.-]*$ ]]; then
+    echo "::error::Invalid or missing release tag '${tag_name}' for GHCR release SBOM extraction."
+    exit 1
+  fi
+
+  local source_revision
+  source_revision=$(printf '%s' "${RESOLVED_SHA:-}" | tr '[:upper:]' '[:lower:]')
+  if [[ ! "$source_revision" =~ ^[a-f0-9]{40}$ ]]; then
+    echo "::error::Invalid 40-character source revision '${RESOLVED_SHA:-}' for GHCR release SBOM extraction."
+    exit 1
+  fi
+
+  if [ -z "${GITHUB_REPOSITORY:-}" ]; then
+    echo "::error::Missing GITHUB_REPOSITORY required to inspect GHCR release artifact."
+    exit 1
+  fi
+
+  local repo_lower image_repo resolved_owner resolved_signer script_dir
+  repo_lower=$(printf '%s' "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')
+  image_repo="ghcr.io/${repo_lower}"
+  resolved_owner="${REPO_OWNER:-${GITHUB_REPOSITORY%%/*}}"
+  resolved_signer="${SIGNER_WORKFLOW:-${GITHUB_REPOSITORY}/.github/workflows/publish-artifact.yml}"
+  script_dir=$(cd "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
+
+  local scoped_docker_config=""
+  if [ -n "${GH_TOKEN:-}" ] && [ -n "${GITHUB_ACTOR_LOGIN:-}" ] && command -v docker >/dev/null 2>&1; then
+    scoped_docker_config=$(mktemp -d "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/docker-config-XXXXXX")
+    chmod 700 "$scoped_docker_config"
+    export DOCKER_CONFIG="$scoped_docker_config"
+    trap 'rm -rf "${scoped_docker_config:-}"' EXIT
+    printf '%s\n' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR_LOGIN" --password-stdin >/dev/null 2>&1 || true
+  fi
+
+  local tag_uri="${image_repo}:${tag_name}"
+  local index_digest=""
+  index_digest=$(docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "$tag_uri" 2>/dev/null | tr -d '[:space:]' || true)
+  if [[ ! "$index_digest" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+    echo "::error::Unable to resolve GHCR multi-platform index digest for '${tag_uri}'."
+    exit 1
+  fi
+
+  local index_uri="${image_repo}@${index_digest}"
+  local raw_index=""
+  raw_index=$(docker buildx imagetools inspect --raw "$index_uri" 2>/dev/null || true)
+  if [[ "${raw_index#"${raw_index%%[![:space:]]*}"}" != \{* ]]; then
+    echo "::error::Unable to inspect raw OCI index JSON for '${index_uri}'."
+    exit 1
+  fi
+
+  local amd64_digest arm64_digest recorded_revision
+  amd64_digest=$(printf '%s' "$raw_index" | jq -r '
+    [.manifests[]? | select(.platform.os == "linux" and .platform.architecture == "amd64") | .digest][0] // empty
+  ' 2>/dev/null | tr -d '[:space:]' || true)
+  arm64_digest=$(printf '%s' "$raw_index" | jq -r '
+    [.manifests[]? | select(.platform.os == "linux" and .platform.architecture == "arm64") | .digest][0] // empty
+  ' 2>/dev/null | tr -d '[:space:]' || true)
+
+  if [[ ! "$amd64_digest" =~ ^sha256:[a-f0-9]{64}$ ]] || [[ ! "$arm64_digest" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+    echo "::error::GHCR release index '${index_uri}' is missing valid linux/amd64 or linux/arm64 digests."
+    exit 1
+  fi
+
+  recorded_revision=$(printf '%s' "$raw_index" | jq -r '.annotations["org.opencontainers.image.revision"] // empty' 2>/dev/null | tr '[:upper:]' '[:lower:]' || true)
+  if [ "$recorded_revision" != "$source_revision" ]; then
+    echo "::error::GHCR release index '${index_uri}' revision '${recorded_revision}' does not match tagged commit '${source_revision}'."
+    exit 1
+  fi
+
+  local arch_digest raw_arch arch_rev amd64_rev="" arm64_rev=""
+  for arch_digest in "$amd64_digest" "$arm64_digest"; do
+    if ! raw_arch=$(docker buildx imagetools inspect --raw "${image_repo}@${arch_digest}" 2>/dev/null); then
+      echo "::error::Per-architecture manifest '${image_repo}@${arch_digest}' is not accessible in GHCR."
+      exit 1
+    fi
+    arch_rev=$(printf '%s' "$raw_arch" | jq -r '.annotations["org.opencontainers.image.revision"] // empty' 2>/dev/null | tr '[:upper:]' '[:lower:]' || true)
+    if [ -n "$arch_rev" ] && [ "$arch_rev" != "$source_revision" ]; then
+      echo "::error::Per-architecture manifest '${image_repo}@${arch_digest}' revision '${arch_rev}' does not match '${source_revision}'."
+      exit 1
+    fi
+    if [ "$arch_digest" = "$amd64_digest" ]; then
+      amd64_rev="$arch_rev"
+    else
+      arm64_rev="$arch_rev"
+    fi
+  done
+
+  local label pair_digest pair_rev subject_uri extracted_sbom out_file
+  for spec in \
+    "index|${index_digest}|${recorded_revision}" \
+    "amd64|${amd64_digest}|${amd64_rev}" \
+    "arm64|${arm64_digest}|${arm64_rev}"; do
+    label="${spec%%|*}"
+    pair_rev="${spec##*|}"
+    pair_digest="${spec#*|}"
+    pair_digest="${pair_digest%|*}"
+    subject_uri="${image_repo}@${pair_digest}"
+
+    if ! verify_subject_provenance "$subject_uri" "$source_revision" "$resolved_owner" "$resolved_signer" "$pair_rev"; then
+      echo "::error::OIDC SLSA provenance verification failed for '${subject_uri}' (expected revision '${source_revision}')."
+      exit 1
+    fi
+
+    if ! extracted_sbom=$(extract_subject_spdx_sbom "$subject_uri" "$resolved_owner" "$resolved_signer"); then
+      echo "::error::OIDC SPDX SBOM attestation extraction failed for '${subject_uri}'."
+      exit 1
+    fi
+
+    out_file="${sbom_dir}/sbom-${label}.spdx.json"
+    printf '%s\n' "$extracted_sbom" > "$out_file"
+  done
+
+  bash "${script_dir}/release-integrity.sh" verify-spdx \
+    "${sbom_dir}/sbom-index.spdx.json" \
+    "${sbom_dir}/sbom-amd64.spdx.json" \
+    "${sbom_dir}/sbom-arm64.spdx.json"
+
+  if [ -n "${GITHUB_OUTPUT:-}" ]; then
+    {
+      echo "index_digest=${index_digest}"
+      echo "amd64_digest=${amd64_digest}"
+      echo "arm64_digest=${arm64_digest}"
+    } >> "$GITHUB_OUTPUT"
+  fi
+}
+
 SUBCOMMAND="${1:-}"
 case "$SUBCOMMAND" in
   inspect-preflight)
@@ -348,8 +482,11 @@ case "$SUBCOMMAND" in
   mirror-promoted-digests)
     cmd_mirror_promoted_digests
     ;;
+  extract-release-sboms)
+    cmd_extract_release_sboms
+    ;;
   *)
-    echo "::error::Usage: $0 {inspect-preflight|extract-promoted-sboms|mirror-promoted-digests}"
+    echo "::error::Usage: $0 {inspect-preflight|extract-promoted-sboms|mirror-promoted-digests|extract-release-sboms}"
     exit 1
     ;;
 esac

@@ -110,6 +110,7 @@ function extractRunBlocks(yaml: string): string[] {
 describe('Release Workflow CI Gating & Artifact Deduplication', () => {
   const ciWorkflow = readWorkflow('ci.yml');
   const publishWorkflow = readWorkflow('publish-artifact.yml');
+  const releaseWorkflow = readWorkflow('release.yml');
   const deployWorkflow = readWorkflow('deploy.yml');
   const deployStageWorkflow = readWorkflow('deploy-stage.yml');
   const deployProviderWorkflow = readWorkflow('deploy-provider.yml');
@@ -153,6 +154,7 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
       'a11y-report:',
       'pages-verify:',
       'ci-complete:',
+      'attest-bundles:',
       'prepare-docs:',
       'deploy-docs:',
     ]) {
@@ -295,7 +297,48 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
     expect(pagesVerifySection).toContain('name: demo-static');
     expect(pagesVerifySection).toContain('name: storybook-static');
     expect(pagesVerifySection).toContain('run: npm run pages:verify');
+    expect(pagesVerifySection).toContain(
+      'run: bash scripts/release-integrity.sh verify-tree-sums docs-portal/.vitepress/dist/storybook'
+    );
+    expect(pagesVerifySection).toContain(
+      'bash scripts/release-integrity.sh generate-tree-sums docs-portal/.vitepress/dist'
+    );
     expect(pagesVerifySection).toContain('name: pages-bundle');
+
+    const attestBundlesSection = extractJobSection(ciWorkflow, 'attest-bundles');
+    expect(ciJobs['attest-bundles']?.needs).toEqual([
+      'ci-complete',
+      'storybook-build',
+      'pages-verify',
+    ]);
+    expect(ciJobs['attest-bundles']?.if).toBe(
+      "github.ref == 'refs/heads/main' && github.event_name == 'push'"
+    );
+    expect(ciJobs['attest-bundles']?.['runs-on']).toBe('ubuntu-latest');
+    expect(ciJobs['attest-bundles']?.['timeout-minutes']).toBe(5);
+    expect(ciJobs['attest-bundles']?.permissions).toEqual({
+      contents: 'read',
+      'id-token': 'write',
+      attestations: 'write',
+    });
+    expect(attestBundlesSection).not.toContain('actions/checkout');
+    expect(attestBundlesSection).not.toContain('npm ci');
+    expect(attestBundlesSection).toContain('sha256sum --check --strict SHA256SUMS');
+    expect(attestBundlesSection).toContain('actions/attest-build-provenance@');
+
+    const storybookJobs = parseWorkflowJobs(storybookWorkflow);
+    const attestStorybookSection = extractJobSection(storybookWorkflow, 'attest-storybook');
+    expect(storybookJobs['attest-storybook']?.needs).toEqual(['build']);
+    expect(storybookJobs['attest-storybook']?.['timeout-minutes']).toBe(5);
+    expect(storybookJobs['attest-storybook']?.permissions).toEqual({
+      contents: 'read',
+      'id-token': 'write',
+      attestations: 'write',
+    });
+    expect(attestStorybookSection).not.toContain('actions/checkout');
+    expect(attestStorybookSection).not.toContain('npm ci');
+    expect(attestStorybookSection).toContain('sha256sum --check --strict SHA256SUMS');
+    expect(attestStorybookSection).toContain('actions/attest-build-provenance@');
 
     const ciCompleteSection = extractJobSection(ciWorkflow, 'ci-complete');
     const expectedVerificationJobs = [
@@ -347,6 +390,7 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
   it('scopes top-level permissions to contents: read and restricts write/actions/deployments permissions to individual jobs', () => {
     for (const [name, content] of [
       ['publish-artifact.yml', publishWorkflow],
+      ['release.yml', releaseWorkflow],
       ['deploy.yml', deployWorkflow],
       ['deploy-stage.yml', deployStageWorkflow],
       ['deploy-provider.yml', deployProviderWorkflow],
@@ -359,6 +403,38 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
         topPermissions: expect.stringMatching(/^permissions:\s*\n\s+contents:\s*read\s*$/),
       });
     }
+
+    const releaseOnSection = extractTopLevelSection(releaseWorkflow, 'on');
+    expect(releaseOnSection).toContain('workflow_run:');
+    expect(releaseOnSection).toContain('- Publish Release Artifact');
+    expect(releaseOnSection).toContain('- completed');
+    expect(releaseOnSection).toContain('workflow_dispatch:');
+    const releaseConcurrency = extractTopLevelSection(releaseWorkflow, 'concurrency');
+    expect(releaseConcurrency).toContain('cancel-in-progress: false');
+    expect(releaseConcurrency).toContain('queue: max');
+
+    const releaseJobs = parseWorkflowJobs(releaseWorkflow);
+    const prepareReleaseSection = extractJobSection(releaseWorkflow, 'prepare-release');
+    const publishReleaseSection = extractJobSection(releaseWorkflow, 'publish-release');
+    expect(releaseJobs['prepare-release']?.permissions).toEqual({
+      contents: 'read',
+      actions: 'read',
+      packages: 'read',
+      attestations: 'read',
+    });
+    expect(prepareReleaseSection).not.toContain(': write');
+    expect(releaseJobs['publish-release']?.needs).toEqual(['prepare-release']);
+    expect(releaseJobs['publish-release']?.permissions).toEqual({
+      contents: 'write',
+      'id-token': 'write',
+      attestations: 'write',
+    });
+    expect(publishReleaseSection).not.toContain('actions/checkout');
+    expect(publishReleaseSection).not.toContain('npm ci');
+    expect(publishReleaseSection).not.toContain('scripts/');
+    expect(publishReleaseSection).toContain('sha256sum --check --strict SHA256SUMS');
+    expect(publishReleaseSection).toContain('actions/attest-build-provenance@');
+    expect(publishReleaseSection).toContain('gh release create');
 
     const preflightJobSection = extractJobSection(publishWorkflow, 'preflight');
     const buildJobSection = extractJobSection(publishWorkflow, 'build');
@@ -992,6 +1068,7 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
     expect(buildJobSection).toContain("exit-code: '1'");
     expect(buildJobSection).toContain("format: 'spdx-json'");
     expect(buildJobSection).toContain("output: 'sbom-${{ matrix.arch }}.spdx.json'");
+    expect(buildJobSection).toContain('/tmp/oci-handoff/sha256-${{ matrix.arch }}.sums');
     expect(buildJobSection).toContain('compression-level: 0');
 
     expect(uploadSarifJobSection).toContain('needs: [preflight, build]');
@@ -1066,6 +1143,38 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
     const summaryIdx = publishJobSection.indexOf('- name: Summary');
     expect(cleanupDockerIdx).toBeGreaterThan(secondaryAttestIdx);
     expect(summaryIdx).toBeGreaterThan(cleanupDockerIdx);
+
+    // Verify per-architecture provenance and GHCR per-architecture SBOM signing skip when promote_existing == 'true', while index attestations always stay active
+    const parsedPublishDoc = parseDocument(publishWorkflow, { version: '1.2', strict: true }).toJS() as {
+      jobs?: {
+        publish?: {
+          steps?: Array<{ name?: string; if?: string; uses?: string }>;
+        };
+      };
+    };
+    const publishSteps = parsedPublishDoc.jobs?.publish?.steps ?? [];
+    const findPublishStep = (name: string) => publishSteps.find((step) => step.name === name);
+
+    for (const gatedStepName of [
+      'Attest amd64 Build Provenance',
+      'Attest arm64 Build Provenance',
+      'Attest amd64 SPDX SBOM',
+      'Attest arm64 SPDX SBOM',
+      'Attest Docker Hub amd64 Build Provenance (optional)',
+      'Attest Docker Hub arm64 Build Provenance (optional)',
+    ]) {
+      expect(findPublishStep(gatedStepName)?.if ?? '').toContain(
+        "needs.preflight.outputs.promote_existing != 'true'"
+      );
+    }
+    for (const activeIndexStepName of [
+      'Attest Build Provenance',
+      'Attest Index SPDX SBOM',
+      'Attest Docker Hub Build Provenance (optional)',
+      'Attest Docker Hub Index SPDX SBOM (optional)',
+    ]) {
+      expect(findPublishStep(activeIndexStepName)?.if ?? '').not.toContain('promote_existing');
+    }
   });
 
   it('isolates GHA cache_from in docker-compose.ci.yml, persists BuildKit cache mounts, skips PR mode=max writes, deduplicates amd64 Next.js and Storybook builds, and smoke-tests arm64 in CI', () => {
@@ -1151,6 +1260,27 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
       fs.writeFileSync(path.join(handoffDir, 'arm64.digest'), `${arm64Digest}\n`);
       fs.writeFileSync(path.join(handoffDir, 'oci-amd64.tar.zst'), 'compressed-amd64');
       fs.writeFileSync(path.join(handoffDir, 'oci-arm64.tar.zst'), 'compressed-arm64');
+      const validArchSbom = JSON.stringify({
+        spdxVersion: 'SPDX-2.3',
+        SPDXID: 'SPDXRef-DOCUMENT',
+        packages: [{ name: 'wedding_website', SPDXID: 'SPDXRef-App' }],
+      });
+      fs.writeFileSync(path.join(handoffDir, 'sbom-amd64.spdx.json'), validArchSbom);
+      fs.writeFileSync(path.join(handoffDir, 'sbom-arm64.spdx.json'), validArchSbom);
+      for (const arch of ['amd64', 'arm64']) {
+        execFileSync('bash', [
+          path.join(process.cwd(), 'scripts', 'release-integrity.sh'),
+          'generate-sums',
+          '--dir',
+          handoffDir,
+          '--output',
+          path.join(handoffDir, `sha256-${arch}.sums`),
+          `oci-${arch}.tar.zst`,
+          `sbom-${arch}.spdx.json`,
+        ]);
+      }
+      const zstdCallsFile = path.join(tempDir, 'zstd_calls.log');
+      fs.writeFileSync(zstdCallsFile, '');
       fs.writeFileSync(callsFile, '');
 
       const zstdShim = path.join(binDir, 'zstd');
@@ -1159,6 +1289,7 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
         `#!/usr/bin/env node
 const fs = require('fs');
 const args = process.argv.slice(2);
+fs.appendFileSync(${JSON.stringify(zstdCallsFile)}, args.join(' ') + '\\n');
 const outIdx = args.indexOf('-o');
 if (args.includes('-d') && outIdx !== -1 && args[outIdx + 1]) {
   fs.writeFileSync(args[outIdx + 1], 'decompressed-oci-tar');
@@ -1194,6 +1325,25 @@ process.exit(1);
 `,
         { mode: 0o755 }
       );
+
+      // 0. Modifying oci-amd64.tar.zst or sbom-amd64.spdx.json fails SHA-256 verification BEFORE zstd decompression or skopeo inspect
+      fs.writeFileSync(path.join(handoffDir, 'oci-amd64.tar.zst'), 'corrupted-amd64-bytes');
+      const checksumFailRes = spawnSync('bash', ['-eo', 'pipefail', '-c', verifyAndPushScript!], {
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ''}`,
+          IMAGE_REPOSITORY: 'ghcr.io/fderuiter/wedding_website',
+          DOCKERHUB_REPOSITORY: 'fderuiter/wedding-website',
+        },
+      });
+      expect(checksumFailRes.status).not.toBe(0);
+      expect(checksumFailRes.stdout + checksumFailRes.stderr).toContain(
+        'SHA-256 checksum verification failed'
+      );
+      expect(fs.readFileSync(zstdCallsFile, 'utf8')).toBe('');
+      expect(fs.readFileSync(callsFile, 'utf8')).toBe('');
+      fs.writeFileSync(path.join(handoffDir, 'oci-amd64.tar.zst'), 'compressed-amd64');
 
       // 1. Tampered arm64 archive fails closed BEFORE any skopeo copy upload occurs (even for amd64)
       const tamperRes = spawnSync('bash', ['-eo', 'pipefail', '-c', verifyAndPushScript!], {
@@ -2094,6 +2244,62 @@ process.exit(1);
           ],
         })
       );
+      fs.writeFileSync(path.join(handoffDir, 'oci-amd64.tar.zst'), 'compressed-amd64');
+      fs.writeFileSync(path.join(handoffDir, 'oci-arm64.tar.zst'), 'compressed-arm64');
+      const integrityScriptPath = path.join(process.cwd(), 'scripts', 'release-integrity.sh');
+      for (const arch of ['amd64', 'arm64']) {
+        execFileSync('bash', [
+          integrityScriptPath,
+          'generate-sums',
+          '--dir',
+          handoffDir,
+          '--output',
+          path.join(handoffDir, `sha256-${arch}.sums`),
+          `oci-${arch}.tar.zst`,
+          `sbom-${arch}.spdx.json`,
+        ]);
+      }
+
+      // Tampering with sbom-amd64.spdx.json or emptying .packages fails before signing
+      const origAmd64Sbom = fs.readFileSync(path.join(handoffDir, 'sbom-amd64.spdx.json'), 'utf8');
+      fs.writeFileSync(
+        path.join(handoffDir, 'sbom-amd64.spdx.json'),
+        JSON.stringify({ spdxVersion: 'SPDX-2.3', SPDXID: 'SPDXRef-DOCUMENT', packages: [] })
+      );
+      const tamperedSbomRes = spawnSync('bash', ['-eo', 'pipefail', '-c', verifySbomScript!], {
+        encoding: 'utf8',
+      });
+      expect(tamperedSbomRes.status).not.toBe(0);
+
+      // Even with recalculated sha256-amd64.sums, empty .packages array still fails verify-spdx
+      execFileSync('bash', [
+        integrityScriptPath,
+        'generate-sums',
+        '--dir',
+        handoffDir,
+        '--output',
+        path.join(handoffDir, 'sha256-amd64.sums'),
+        'oci-amd64.tar.zst',
+        'sbom-amd64.spdx.json',
+      ]);
+      const emptyPkgSbomRes = spawnSync('bash', ['-eo', 'pipefail', '-c', verifySbomScript!], {
+        encoding: 'utf8',
+      });
+      expect(emptyPkgSbomRes.status).not.toBe(0);
+      expect(emptyPkgSbomRes.stdout + emptyPkgSbomRes.stderr).toContain('non-empty .packages array');
+
+      // Restore valid SBOM and checksums
+      fs.writeFileSync(path.join(handoffDir, 'sbom-amd64.spdx.json'), origAmd64Sbom);
+      execFileSync('bash', [
+        integrityScriptPath,
+        'generate-sums',
+        '--dir',
+        handoffDir,
+        '--output',
+        path.join(handoffDir, 'sha256-amd64.sums'),
+        'oci-amd64.tar.zst',
+        'sbom-amd64.spdx.json',
+      ]);
 
       const okSbomRes = spawnSync('bash', ['-eo', 'pipefail', '-c', verifySbomScript!], {
         encoding: 'utf8',
@@ -2227,6 +2433,225 @@ process.exit(1);
       });
       expect(failCi.status).toBe(1);
       expect(failCi.stdout + failCi.stderr).toContain(`${jobName} (skipped)`);
+    }
+  });
+
+  it('verifies SHA256SUMS for pages-bundle, storybook-static, and release.yml assets and fails closed on modified or deleted files', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'release-bundle-integrity-test-'));
+    const integrityScript = path.join(process.cwd(), 'scripts', 'release-integrity.sh');
+    try {
+      // 1. Simulate storybook-static -> pages-bundle handoff and prepare-docs verification
+      const workDir = path.join(tempDir, 'ci-work');
+      const distDir = path.join(workDir, 'docs-portal', '.vitepress', 'dist');
+      const demoDir = path.join(distDir, 'demo');
+      const sbDir = path.join(distDir, 'storybook');
+      fs.mkdirSync(demoDir, { recursive: true });
+      fs.mkdirSync(sbDir, { recursive: true });
+      fs.symlinkSync(path.join(process.cwd(), 'scripts'), path.join(workDir, 'scripts'));
+
+      fs.writeFileSync(path.join(sbDir, 'index.html'), '<html>Storybook</html>');
+      fs.writeFileSync(path.join(sbDir, 'iframe.html'), '<html>Iframe</html>');
+      execFileSync('bash', [integrityScript, 'generate-tree-sums', sbDir]);
+
+      fs.writeFileSync(path.join(distDir, '.nojekyll'), '');
+      fs.writeFileSync(path.join(distDir, 'index.html'), '<html>Docs</html>');
+      fs.writeFileSync(path.join(demoDir, 'index.html'), '<html>Demo</html>');
+      execFileSync('bash', [integrityScript, 'verify-tree-sums', sbDir]);
+      execFileSync('bash', [integrityScript, 'generate-tree-sums', distDir]);
+
+      const ciRunBlocks = extractRunBlocks(ciWorkflow);
+      const deployDocsVerifyBlock = ciRunBlocks.find(
+        (block) =>
+          block.includes('bash scripts/release-integrity.sh verify-tree-sums docs-portal/.vitepress/dist') &&
+          block.includes('docs-portal/.vitepress/dist/storybook/index.html')
+      );
+      expect(deployDocsVerifyBlock).toBeDefined();
+
+      // Valid pages-bundle passes before actions/upload-pages-artifact / actions/deploy-pages
+      const validPagesRes = spawnSync('bash', ['-eo', 'pipefail', '-c', deployDocsVerifyBlock!], {
+        cwd: workDir,
+        encoding: 'utf8',
+      });
+      expect(validPagesRes.status).toBe(0);
+
+      // Modifying a file inside storybook-static / pages-bundle fails sha256sum --check --strict
+      fs.writeFileSync(path.join(sbDir, 'iframe.html'), '<html>Tampered</html>');
+      const modifiedPagesRes = spawnSync(
+        'bash',
+        ['-eo', 'pipefail', '-c', deployDocsVerifyBlock!],
+        { cwd: workDir, encoding: 'utf8' }
+      );
+      expect(modifiedPagesRes.status).not.toBe(0);
+      expect(modifiedPagesRes.stdout + modifiedPagesRes.stderr).toContain(
+        'SHA-256 checksum verification failed'
+      );
+
+      // Deleting a file (.nojekyll) inside pages-bundle fails sha256sum --check --strict
+      fs.writeFileSync(path.join(sbDir, 'iframe.html'), '<html>Iframe</html>');
+      fs.unlinkSync(path.join(distDir, '.nojekyll'));
+      const deletedPagesRes = spawnSync('bash', ['-eo', 'pipefail', '-c', deployDocsVerifyBlock!], {
+        cwd: workDir,
+        encoding: 'utf8',
+      });
+      expect(deletedPagesRes.status).not.toBe(0);
+
+      // 2. Execute release.yml prepare-release bundle assembly and checkout-free publish-release verification + gh release create
+      const releaseRepoDir = path.join(tempDir, 'release-repo');
+      const binDir = path.join(tempDir, 'bin');
+      const ghCallsLog = path.join(tempDir, 'gh-release-calls.json');
+      const stepSummary = path.join(tempDir, 'summary.md');
+      fs.mkdirSync(releaseRepoDir, { recursive: true });
+      fs.mkdirSync(binDir, { recursive: true });
+      fs.writeFileSync(ghCallsLog, '[]');
+      fs.writeFileSync(stepSummary, '');
+
+      execFileSync('git', ['init', '--initial-branch=main'], { cwd: releaseRepoDir });
+      execFileSync('git', ['config', 'user.email', 'release@example.com'], { cwd: releaseRepoDir });
+      execFileSync('git', ['config', 'user.name', 'Release Bot'], { cwd: releaseRepoDir });
+      fs.copyFileSync(
+        path.join(process.cwd(), 'CHANGELOG.md'),
+        path.join(releaseRepoDir, 'CHANGELOG.md')
+      );
+      fs.mkdirSync(path.join(releaseRepoDir, 'scripts'), { recursive: true });
+      fs.copyFileSync(
+        integrityScript,
+        path.join(releaseRepoDir, 'scripts', 'release-integrity.sh')
+      );
+      execFileSync('git', ['add', '.'], { cwd: releaseRepoDir });
+      execFileSync('git', ['commit', '-m', 'release fixture'], { cwd: releaseRepoDir });
+      const targetSha = execFileSync('git', ['rev-parse', 'HEAD'], {
+        cwd: releaseRepoDir,
+        encoding: 'utf8',
+      }).trim();
+      execFileSync('git', ['tag', 'v0.2.0', targetSha], { cwd: releaseRepoDir });
+
+      const releaseBundleDir = '/tmp/release-bundle';
+      fs.rmSync(releaseBundleDir, { recursive: true, force: true });
+      fs.mkdirSync(path.join(releaseBundleDir, 'assets'), { recursive: true });
+      for (const label of ['index', 'amd64', 'arm64']) {
+        fs.writeFileSync(
+          path.join(releaseBundleDir, 'assets', `sbom-${label}.spdx.json`),
+          JSON.stringify({
+            spdxVersion: 'SPDX-2.3',
+            SPDXID: 'SPDXRef-DOCUMENT',
+            packages: [{ name: `pkg-${label}`, SPDXID: `SPDXRef-${label}` }],
+          })
+        );
+      }
+
+      const releaseBlocks = extractRunBlocks(releaseWorkflow);
+      const prepareBundleScript = releaseBlocks.find((block) =>
+        block.includes('extract-changelog-notes')
+      );
+      const verifyPublishScript = releaseBlocks.find(
+        (block) =>
+          block.includes('Symbolic links are forbidden inside release-bundle') &&
+          block.includes('sha256sum --check --strict SHA256SUMS')
+      );
+      const ghReleaseScript = releaseBlocks.find((block) => block.includes('gh release create'));
+      expect(prepareBundleScript).toBeDefined();
+      expect(verifyPublishScript).toBeDefined();
+      expect(ghReleaseScript).toBeDefined();
+
+      const indexDigest = `sha256:${'4'.repeat(64)}`;
+      const prepRes = spawnSync('bash', ['-eo', 'pipefail', '-c', prepareBundleScript!], {
+        cwd: releaseRepoDir,
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          TAG_NAME: 'v0.2.0',
+          TARGET_SHA: targetSha,
+          INDEX_DIGEST: indexDigest,
+          REPO: 'fderuiter/wedding_website',
+        },
+      });
+      expect(prepRes.status).toBe(0);
+
+      // Checkout-free publish-release verification succeeds on untampered bundle
+      const verifyOkRes = spawnSync('bash', ['-eo', 'pipefail', '-c', verifyPublishScript!], {
+        cwd: tempDir,
+        encoding: 'utf8',
+        env: { ...process.env, TAG_NAME: 'v0.2.0' },
+      });
+      expect(verifyOkRes.status).toBe(0);
+
+      // Tampering with sbom-index.spdx.json fails checkout-free publish-release verification before signing/publishing
+      const origIndexSbom = fs.readFileSync(
+        path.join(releaseBundleDir, 'assets', 'sbom-index.spdx.json'),
+        'utf8'
+      );
+      fs.writeFileSync(
+        path.join(releaseBundleDir, 'assets', 'sbom-index.spdx.json'),
+        '{"tampered":true}'
+      );
+      const verifyTamperRes = spawnSync('bash', ['-eo', 'pipefail', '-c', verifyPublishScript!], {
+        cwd: tempDir,
+        encoding: 'utf8',
+        env: { ...process.env, TAG_NAME: 'v0.2.0' },
+      });
+      expect(verifyTamperRes.status).not.toBe(0);
+      fs.writeFileSync(
+        path.join(releaseBundleDir, 'assets', 'sbom-index.spdx.json'),
+        origIndexSbom
+      );
+
+      // Mock gh CLI to confirm gh release create receives verified assets and flags
+      fs.writeFileSync(
+        path.join(binDir, 'gh'),
+        `#!/usr/bin/env node
+const fs = require('fs');
+const args = process.argv.slice(2);
+const logFile = ${JSON.stringify(ghCallsLog)};
+const calls = JSON.parse(fs.readFileSync(logFile, 'utf8'));
+calls.push(args);
+fs.writeFileSync(logFile, JSON.stringify(calls, null, 2));
+if (args[0] === 'release' && args[1] === 'view') {
+  process.exit(1);
+}
+if (args[0] === 'release' && args[1] === 'create') {
+  process.exit(0);
+}
+process.exit(1);
+`,
+        { mode: 0o755 }
+      );
+
+      const pubRes = spawnSync('bash', ['-eo', 'pipefail', '-c', ghReleaseScript!], {
+        cwd: tempDir,
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ''}`,
+          GH_TOKEN: 'ghs_release_token',
+          REPO: 'fderuiter/wedding_website',
+          TAG_NAME: 'v0.2.0',
+          TARGET_SHA: targetSha,
+          IS_PRERELEASE: 'false',
+          MAKE_LATEST: 'true',
+          INDEX_DIGEST: indexDigest,
+          GITHUB_STEP_SUMMARY: stepSummary,
+        },
+      });
+      expect(pubRes.status).toBe(0);
+      const ghCalls = JSON.parse(fs.readFileSync(ghCallsLog, 'utf8')) as string[][];
+      const createCall = ghCalls.find((c) => c[0] === 'release' && c[1] === 'create') ?? [];
+      expect(createCall).toEqual(
+        expect.arrayContaining([
+          'release',
+          'create',
+          'v0.2.0',
+          '--verify-tag',
+          '--latest=true',
+          '/tmp/release-bundle/assets/SHA256SUMS',
+          '/tmp/release-bundle/assets/sbom-index.spdx.json',
+          '/tmp/release-bundle/assets/sbom-amd64.spdx.json',
+          '/tmp/release-bundle/assets/sbom-arm64.spdx.json',
+          '/tmp/release-bundle/assets/wedding-website-v0.2.0.tar.gz',
+        ])
+      );
+    } finally {
+      fs.rmSync('/tmp/release-bundle', { recursive: true, force: true });
+      fs.rmSync(tempDir, { recursive: true, force: true });
     }
   });
 
