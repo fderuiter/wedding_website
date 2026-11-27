@@ -1074,6 +1074,7 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
     'src/app/api/uploads/[...path]/route.ts',
     'src/app/api/admin/maintenance/export/route.ts',
     'scripts/preflight-env.ts',
+    'scripts/release-integrity.sh',
     'scripts/verify-migration-compatibility.ts',
     'ARCHITECTURE.md',
     'CHANGELOG.md',
@@ -1093,6 +1094,7 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
     '.github/workflows/deploy.yml',
     '.github/workflows/deploy-provider.yml',
     '.github/workflows/publish-artifact.yml',
+    '.github/workflows/release.yml',
     '.github/workflows/db-migrate.yml',
     '.github/workflows/rollback.yml',
   ];
@@ -2852,6 +2854,7 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
     'static-export-build',
     'storybook-build',
     'pages-verify',
+    'attest-bundles',
     'prepare-docs',
     'deploy-docs',
   ]) {
@@ -2994,6 +2997,81 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
     ) {
       errors.push(
         '.github/workflows/storybook.yml: `actions/cache` configuration (`uses`, `path`, `key`, `restore-keys`) must match .github/workflows/ci.yml `storybook-build`'
+      );
+    }
+  }
+
+  // 4b-pages. Verify unified Pages base-path propagation from `verify` without hardcoded `/wedding_website` gates
+  if (/\/wedding_website\b/.test(ciWorkflowRaw)) {
+    errors.push(
+      '.github/workflows/ci.yml: Must not hardcode `/wedding_website` base-path gates; resolve dynamic `portal_base_path`, `demo_base_path`, and `storybook_base_path` outputs in `verify`'
+    );
+  }
+  const ciJobsNode: unknown = isMap(ciDoc.contents) ? ciDoc.contents.get('jobs', true) : null;
+  const ciVerifyJob: unknown = isMap(ciJobsNode) ? ciJobsNode.get('verify', true) : null;
+  const ciVerifyOutputs: unknown = isMap(ciVerifyJob) ? ciVerifyJob.get('outputs', true) : null;
+  for (const requiredPagesOutput of ['portal_base_path', 'demo_base_path', 'storybook_base_path'] as const) {
+    if (!isMap(ciVerifyOutputs) || !ciVerifyOutputs.has(requiredPagesOutput)) {
+      errors.push(
+        `.github/workflows/ci.yml: \`verify\` job must export \`outputs.${requiredPagesOutput}\` for unified GitHub Pages alignment`
+      );
+    }
+  }
+  if (!ciWorkflowRaw.includes('needs.verify.outputs.storybook_base_path')) {
+    errors.push(
+      '.github/workflows/ci.yml: `storybook-build` and `prepare-docs` must consume `needs.verify.outputs.storybook_base_path`'
+    );
+  }
+  if (!ciWorkflowRaw.includes('needs.verify.outputs.demo_base_path')) {
+    errors.push(
+      '.github/workflows/ci.yml: `static-export-build` and `prepare-docs` must consume `needs.verify.outputs.demo_base_path`'
+    );
+  }
+  if (!ciWorkflowRaw.includes('needs.verify.outputs.portal_base_path')) {
+    errors.push(
+      '.github/workflows/ci.yml: `pages-verify` and `prepare-docs` must consume `needs.verify.outputs.portal_base_path`'
+    );
+  }
+
+  const pagesShowcaseSpecPath = path.join(repoRoot, 'e2e/pages-showcase.spec.ts');
+  if (fs.existsSync(pagesShowcaseSpecPath)) {
+    const pagesShowcaseSpecRaw = fs.readFileSync(pagesShowcaseSpecPath, 'utf8');
+    if (/\/wedding_website\b/.test(pagesShowcaseSpecRaw)) {
+      errors.push(
+        'e2e/pages-showcase.spec.ts: Must not hardcode `/wedding_website` base-path strings; parameterize routes and `window.fetch` endpoints via `PAGES_BASE_PATH`'
+      );
+    }
+    if (!pagesShowcaseSpecRaw.includes('PAGES_BASE_PATH')) {
+      errors.push(
+        'e2e/pages-showcase.spec.ts: Must parameterize portal, demo, and Storybook prefixes via `PAGES_BASE_PATH`'
+      );
+    }
+  }
+
+  // 4b-ii. Verify release.yml, SHA256SUMS, and scripts/release-integrity.sh workflow & runbook contracts
+  const releaseWorkflowRaw = fs.readFileSync(path.join(workflowsDir, 'release.yml'), 'utf8');
+  if (
+    !releaseWorkflowRaw.includes('prepare-release:') ||
+    !releaseWorkflowRaw.includes('publish-release:') ||
+    !releaseWorkflowRaw.includes('scripts/release-integrity.sh') ||
+    !releaseWorkflowRaw.includes('SHA256SUMS') ||
+    !releaseWorkflowRaw.includes('gh release create')
+  ) {
+    errors.push(
+      '.github/workflows/release.yml: Must define `prepare-release` and `publish-release` jobs delegating `SHA256SUMS` checks to `scripts/release-integrity.sh` and publishing via `gh release create`'
+    );
+  }
+  for (const requiredReleaseDocToken of [
+    'release.yml',
+    'prepare-release',
+    'publish-release',
+    'attest-storybook',
+    'scripts/release-integrity.sh',
+    'SHA256SUMS',
+  ]) {
+    if (!deploymentMd.includes(requiredReleaseDocToken)) {
+      errors.push(
+        `DEPLOYMENT.md: Missing release integrity / workflow reference "${requiredReleaseDocToken}"`
       );
     }
   }
@@ -3750,6 +3828,20 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
   if (!upgradingMd.includes('npm run migrate:deploy') || !upgradingMd.includes('npm ci')) {
     errors.push(
       'docs/upgrading.md: Host Node.js upgrade track must document `npm ci` and `npm run migrate:deploy` (Remediation: Update Track C in docs/upgrading.md)'
+    );
+  }
+  if (
+    !upgradingMd.includes('SHA256SUMS') ||
+    !upgradingMd.includes('gh attestation verify') ||
+    !upgradingMd.includes('sha256sum --check --strict')
+  ) {
+    errors.push(
+      'docs/upgrading.md: Host Node.js upgrade track (Track C) must document `gh attestation verify` and `sha256sum --check --strict SHA256SUMS` release verification (Remediation: Update Track C in docs/upgrading.md)'
+    );
+  }
+  if (!versioningMd.includes('release.yml') || !versioningMd.includes('SHA256SUMS')) {
+    errors.push(
+      'docs/versioning.md: Must document automated GitHub Release publication via `.github/workflows/release.yml` and attested `SHA256SUMS` manifests (Remediation: Update Section 2 in docs/versioning.md)'
     );
   }
 

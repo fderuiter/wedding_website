@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useCallback } from 'react';
+import React, { useCallback, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useOverlay } from '@/hooks/useOverlay';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTheme } from '@/components/ThemeProvider';
@@ -21,6 +22,8 @@ export interface OverlayProps {
   'aria-label'?: string;
   'aria-labelledby'?: string;
   'aria-describedby'?: string;
+  modal?: boolean;
+  allowToastInteraction?: boolean;
   triggerRef?: React.RefObject<HTMLElement | null>;
   ref?: React.Ref<HTMLDivElement>;
 }
@@ -39,10 +42,20 @@ export function Overlay({
   'aria-label': ariaLabel,
   'aria-labelledby': ariaLabelledby,
   'aria-describedby': ariaDescribedby,
+  modal,
+  allowToastInteraction,
   triggerRef,
   ref,
 }: OverlayProps) {
-  const { overlayRef, handleBackdropClick } = useOverlay(isOpen, onClose, { triggerRef });
+  const isModalOverlay = modal ?? Boolean(ariaModal === true || ariaModal === 'true');
+  const shouldAllowToasts = allowToastInteraction ?? role !== 'alertdialog';
+  const backdropRef = useRef<HTMLDivElement>(null);
+  const { overlayRef, handleBackdropClick } = useOverlay(isOpen, onClose, {
+    triggerRef,
+    inertRootRef: isModalOverlay ? backdropRef : undefined,
+    allowToastInteraction: shouldAllowToasts,
+  });
+
   const { themePreset } = useTheme();
   const presetTokens = getPresetTokens(themePreset);
   const durationNormal = parseDurationSec(presetTokens['--motion-duration-normal'], 0.2);
@@ -83,10 +96,11 @@ export function Overlay({
 
   const anim = transitions[animationType];
 
-  return (
+  const overlayContent = (
     <AnimatePresence>
       {isOpen && (
         <motion.div
+          ref={backdropRef}
           id={id}
           className={cn(layoutClassName, 'bg-black/60 backdrop-blur-sm')}
           style={{ backgroundColor: 'var(--dialog-backdrop, rgba(0, 0, 0, 0.6))' }}
@@ -115,5 +129,10 @@ export function Overlay({
       )}
     </AnimatePresence>
   );
-}
 
+  if (isModalOverlay && typeof document !== 'undefined') {
+    return createPortal(overlayContent, document.body);
+  }
+
+  return overlayContent;
+}

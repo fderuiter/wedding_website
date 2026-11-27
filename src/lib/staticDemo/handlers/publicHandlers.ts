@@ -21,6 +21,7 @@ import {
   getActiveAppConfig,
   getOrderedDemoHouseholdMembers,
   pushAuditVersion,
+  toAdminConfigDto,
   toPhotoDto,
 } from '../dtoMappers';
 import { buildSubEventIcs } from '../exporters';
@@ -31,6 +32,16 @@ import {
   extractVenueDateAndTime,
   subtractCalendarDays,
 } from '@/utils/venueDateTime';
+import {
+  RECOVERY_CONFIRMATION_MESSAGE,
+  findUnambiguousRecoverableInvitation,
+  hasRecoveryHoneypotTripped,
+  isEmailProviderActive,
+  isHouseholdOnRecoveryCooldown,
+  isSmsProviderActive,
+  markHouseholdRecoverySent,
+  parseRecoveryIdentifier,
+} from '@/utils/guestSignInRecovery';
 import type { CustomRsvpQuestionDTO, MealOptionDTO } from '@/utils/rsvpPrompts';
 
 function hasUnpromotedAddressCollectionTag(partyTags: unknown): boolean {
@@ -902,6 +913,146 @@ export async function handlePublicRoutes(
     }
 
     return errorJson(401, 'Invalid passcode or invitation code.');
+  }
+
+  if (pathname === '/api/guest/recover' && (method === 'GET' || method === 'POST')) {
+    const snapshot = store.getSnapshot();
+    const adminConfigView = toAdminConfigDto(getActiveAppConfig(snapshot));
+    const emailActive = isEmailProviderActive(adminConfigView);
+    const smsActive = isSmsProviderActive(adminConfigView);
+    const messagingActive = emailActive || smsActive;
+
+    if (method === 'GET') {
+      return wrapMiddlewareJson(
+        {
+          messagingActive,
+          emailActive,
+          smsActive,
+        },
+        {
+          headers: { 'Cache-Control': 'no-store' },
+        },
+      );
+    }
+
+    const body = await readJsonBody(request);
+    if (hasRecoveryHoneypotTripped(body)) {
+      return wrapMiddlewareJson(
+        {
+          success: true,
+          message: RECOVERY_CONFIRMATION_MESSAGE,
+        },
+        {
+          headers: { 'Cache-Control': 'no-store' },
+        },
+      );
+    }
+
+    const parsed = parseRecoveryIdentifier({
+      identifier: typeof body.identifier === 'string' ? body.identifier : undefined,
+      query: typeof body.query === 'string' ? body.query : undefined,
+      email: typeof body.email === 'string' ? body.email : undefined,
+      name: typeof body.name === 'string' ? body.name : undefined,
+    });
+    if (!parsed.ok) {
+      return errorJson(400, parsed.error);
+    }
+
+    if (!messagingActive) {
+      return errorJson(
+        503,
+        'Outbound email or SMS delivery is not configured on this site. Please contact the hosts directly.',
+      );
+    }
+
+    const candidates = snapshot.invitationCode.map((inv) => ({
+      ...inv,
+      members: getOrderedDemoHouseholdMembers(snapshot, inv),
+    }));
+    const matched = findUnambiguousRecoverableInvitation(candidates, parsed.data);
+
+    if (matched) {
+      const { invitation, preferredEmail } = matched;
+      const cooldownKey = `staticDemo:${snapshot.activeArchetype}:${invitation.id}`;
+      if (!isHouseholdOnRecoveryCooldown(cooldownKey)) {
+        const adultMembers = invitation.members.filter((m) => m.role !== 'CHILD');
+        const resolvedEmail =
+          preferredEmail ||
+          (invitation.email && invitation.email.trim() ? invitation.email.trim() : null) ||
+          adultMembers.find((m) => m.email && m.email.trim())?.email?.trim() ||
+          null;
+        const resolvedPhone =
+          adultMembers.find((m) => m.phone && m.phone.trim())?.phone?.trim() || null;
+
+        const channel: 'EMAIL' | 'SMS' | null =
+          emailActive && resolvedEmail
+            ? 'EMAIL'
+            : smsActive && resolvedPhone
+              ? 'SMS'
+              : null;
+        const destination = channel === 'EMAIL' ? resolvedEmail : resolvedPhone;
+
+        if (channel && destination) {
+          const activeConfig = getActiveAppConfig(snapshot);
+          const fallbackOrigin = new URL(request.url).origin;
+          const cleanBaseUrl = (activeConfig.baseUrl || fallbackOrigin).replace(/\/+$/, '');
+          const rsvpUrl = `${cleanBaseUrl}/guest?code=${encodeURIComponent(invitation.code)}`;
+          const coupleLabel =
+            activeConfig.heroTitle ||
+            [activeConfig.partner1Name, activeConfig.partner2Name].filter(Boolean).join(' & ') ||
+            'Our Wedding';
+
+          store.mutate((draft) => {
+            const nowIso = new Date().toISOString();
+            const broadcastId = generateDemoId('broadcast-recovery');
+            draft.broadcastMessage.unshift({
+              id: broadcastId,
+              channel,
+              subject:
+                channel === 'EMAIL'
+                  ? `Your Guest Portal Sign-In Link — ${coupleLabel}`
+                  : null,
+              body:
+                channel === 'EMAIL'
+                  ? `Hello ${invitation.guestName},\n\nHere is your personal one-click sign-in link for ${coupleLabel}:\n\n${rsvpUrl}`
+                  : `${coupleLabel}: Open your personal one-click Guest Portal & RSVP sign-in link for ${invitation.guestName}: ${rsvpUrl}`,
+              targetFilters: { recovery: true, invitationCodeId: invitation.id },
+              status: 'COMPLETED',
+              totalRecipients: 1,
+              sentCount: 1,
+              failedCount: 0,
+              scheduledFor: null,
+              sentAt: nowIso,
+              createdAt: nowIso,
+              updatedAt: nowIso,
+            });
+            draft.broadcastRecipient.unshift({
+              id: generateDemoId('brecip-recovery'),
+              broadcastId,
+              invitationCodeId: invitation.id,
+              guestName: invitation.guestName,
+              destination,
+              status: 'SENT',
+              error: null,
+              sentAt: nowIso,
+              createdAt: nowIso,
+              updatedAt: nowIso,
+            });
+          });
+          markHouseholdRecoverySent(cooldownKey);
+        }
+      }
+    }
+
+    return wrapMiddlewareJson(
+      {
+        success: true,
+        message: RECOVERY_CONFIRMATION_MESSAGE,
+      },
+      {
+        headers: { 'Cache-Control': 'no-store' },
+      },
+    );
   }
 
   if (pathname === '/api/guest/lookup' && method === 'POST') {

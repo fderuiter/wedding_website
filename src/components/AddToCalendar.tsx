@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useId } from 'react';
 import { createGoogleCalendarLink, createYahooCalendarLink, createOutlookCalendarLink, createIcsFile, type CalendarEvent } from '@/utils/calendar';
-import { useOverlay } from '@/hooks/useOverlay';
+import { useMenuPopup } from '@/hooks/useMenuPopup';
 import { useMenuNavigation } from '@/hooks/useMenuNavigation';
 import { useOptionalToast } from '@/components/ui/ToastProvider';
 import { downloadExportBlob } from '@/utils/exportDownload';
@@ -45,11 +45,10 @@ export default function AddToCalendar({ event, className, downloadUrl, eventId }
 
   const handleToggle = () => setIsOpen((prev) => !prev);
 
-  const { overlayRef } = useOverlay(
+  const { menuRef: overlayRef } = useMenuPopup(
     isOpen,
     () => {
       setIsOpen(false);
-      triggerRef.current?.focus();
     },
     { triggerRef }
   );
@@ -121,7 +120,7 @@ export default function AddToCalendar({ event, className, downloadUrl, eventId }
           id={triggerId}
           aria-haspopup="true"
           aria-expanded={isOpen}
-          aria-controls={menuId}
+          aria-controls={isOpen ? menuId : undefined}
           onClick={handleToggle}
           onKeyDown={handleTriggerKeyDown}
         >

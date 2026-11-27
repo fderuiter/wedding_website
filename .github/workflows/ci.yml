@@ -22,6 +22,9 @@ jobs:
       contents: read
     outputs:
       db_image: ${{ steps.resolve-db-image.outputs.db_image }}
+      portal_base_path: ${{ steps.resolve-pages-base-paths.outputs.portal_base_path }}
+      demo_base_path: ${{ steps.resolve-pages-base-paths.outputs.demo_base_path }}
+      storybook_base_path: ${{ steps.resolve-pages-base-paths.outputs.storybook_base_path }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -63,6 +66,23 @@ jobs:
             process.stdout.write(image);
           ')
           echo "db_image=${DB_IMAGE}" >> "$GITHUB_OUTPUT"
+      - name: Resolve GitHub Pages Base Paths
+        id: resolve-pages-base-paths
+        timeout-minutes: 2
+        env:
+          GH_REPO: ${{ github.repository }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          PAGES_API_JSON=""
+          if [ -n "${GH_REPO:-}" ] && [ -n "${GITHUB_TOKEN:-}" ]; then
+            PAGES_API_JSON=$(curl -fsSL --connect-timeout 5 --max-time 15 \
+              -H "Accept: application/vnd.github+json" \
+              -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "https://api.github.com/repos/${GH_REPO}/pages" 2>/dev/null || true)
+          fi
+          PAGES_API_JSON="$PAGES_API_JSON" node scripts/build-pages-bundle.mjs --resolve-base-paths >> "$GITHUB_OUTPUT"
+
       - name: Cache TypeScript and ESLint incremental state
         id: ts-eslint-cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -225,7 +245,7 @@ jobs:
 
       - name: Build static documentation portal
         env:
-          VITEPRESS_BASE: /wedding_website/
+          VITEPRESS_BASE: ${{ steps.resolve-pages-base-paths.outputs.portal_base_path }}
           SKIP_DOC_SYNC: 'true'
         run: npm run docs:build
 
@@ -739,7 +759,13 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-storybook-${{ hashFiles('package-lock.json') }}-
       - name: Build static Storybook showcase
+        env:
+          NEXT_PUBLIC_BASE_PATH: ${{ needs.verify.outputs.storybook_base_path }}
         run: npm run build-storybook
+      - name: Generate and verify Storybook bundle checksums
+        run: |
+          bash scripts/release-integrity.sh generate-tree-sums storybook-static
+          bash scripts/release-integrity.sh verify-tree-sums storybook-static
       - name: Upload Storybook Static Showcase Artifact
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -754,8 +780,6 @@ jobs:
     timeout-minutes: 25
     permissions:
       contents: read
-    outputs:
-      demo_base_path: ${{ steps.base-path.outputs.demo_base }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -768,49 +792,16 @@ jobs:
         env:
           SKIP_NEXT_TYPEGEN: 'true'
         run: npm ci
-      - name: Resolve Pages base path
-        id: base-path
-        timeout-minutes: 2
-        env:
-          GH_REPO: ${{ github.repository }}
-          GITHUB_TOKEN: ${{ github.token }}
-        run: |
-          OWNER="${GH_REPO%%/*}"
-          REPO="${GH_REPO#*/}"
-          PAGES_BASE="/${REPO}"
-          if [ "${REPO,,}" = "${OWNER,,}.github.io" ] || [ -f "CNAME" ] || [ -f "public/CNAME" ] || [ -f "docs-portal/public/CNAME" ]; then
-            PAGES_BASE=""
-          elif PAGES_JSON=$(curl -fsSL \
-            -H "Accept: application/vnd.github+json" \
-            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            "https://api.github.com/repos/${GH_REPO}/pages" 2>/dev/null); then
-            RESOLVED_BASE=$(printf '%s' "$PAGES_JSON" | node -e '
-              const fs = require("node:fs");
-              const data = JSON.parse(fs.readFileSync(0, "utf8"));
-              if (data.cname) {
-                process.stdout.write("");
-              } else if (data.html_url) {
-                const pathname = new URL(data.html_url).pathname.replace(/\/+$/, "");
-                process.stdout.write(pathname);
-              }
-            ')
-            PAGES_BASE="$RESOLVED_BASE"
-          fi
-          NORMALIZED_PAGES_BASE=$(printf '%s' "$PAGES_BASE" | sed 's:/*$::')
-          DEMO_BASE="${NORMALIZED_PAGES_BASE}/demo"
-          echo "pages_base=${NORMALIZED_PAGES_BASE}" >> "$GITHUB_OUTPUT"
-          echo "demo_base=${DEMO_BASE}" >> "$GITHUB_OUTPUT"
       - name: Cache Next.js static export build
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .next-export/cache
-          key: ${{ runner.os }}-next-export-${{ steps.base-path.outputs.demo_base }}-${{ hashFiles('package-lock.json') }}-${{ hashFiles('next.config.ts', 'postcss.config.mjs', 'tsconfig.json', 'tsconfig.build.json', 'scripts/build-export.mjs', 'public/**', 'src/**') }}
+          key: ${{ runner.os }}-next-export-${{ needs.verify.outputs.demo_base_path }}-${{ hashFiles('package-lock.json') }}-${{ hashFiles('next.config.ts', 'postcss.config.mjs', 'tsconfig.json', 'tsconfig.build.json', 'scripts/build-export.mjs', 'public/**', 'src/**') }}
           restore-keys: |
-            ${{ runner.os }}-next-export-${{ steps.base-path.outputs.demo_base }}-${{ hashFiles('package-lock.json') }}-
+            ${{ runner.os }}-next-export-${{ needs.verify.outputs.demo_base_path }}-${{ hashFiles('package-lock.json') }}-
       - name: Build static HTML showcase
         env:
-          NEXT_PUBLIC_BASE_PATH: ${{ steps.base-path.outputs.demo_base }}
+          NEXT_PUBLIC_BASE_PATH: ${{ needs.verify.outputs.demo_base_path }}
         run: |
           set -o pipefail
           npm run build:export 2>&1 | tee static-export-build.log
@@ -848,7 +839,7 @@ jobs:
         run: npx playwright install-deps chromium
       - name: Audit static HTML showcase runtime and WCAG 2.2 AA accessibility
         env:
-          NEXT_PUBLIC_BASE_PATH: ${{ steps.base-path.outputs.demo_base }}
+          NEXT_PUBLIC_BASE_PATH: ${{ needs.verify.outputs.demo_base_path }}
         run: npm run test:e2e:static
       - name: Upload Static Showcase A11y Violations
         if: always() && !cancelled()
@@ -1142,6 +1133,8 @@ jobs:
         with:
           name: storybook-static
           path: docs-portal/.vitepress/dist/storybook
+      - name: Verify Storybook Static Showcase Checksums
+        run: bash scripts/release-integrity.sh verify-tree-sums docs-portal/.vitepress/dist/storybook
       - name: Assemble and verify unified Pages bundle files
         run: |
           touch docs-portal/.vitepress/dist/.nojekyll
@@ -1170,7 +1163,13 @@ jobs:
         timeout-minutes: 5
         run: npx playwright install-deps chromium
       - name: Verify unified GitHub Pages showcase bundle
+        env:
+          PAGES_BASE_PATH: ${{ needs.verify.outputs.portal_base_path }}
         run: npm run pages:verify
+      - name: Generate and verify unified Pages bundle checksums
+        run: |
+          bash scripts/release-integrity.sh generate-tree-sums docs-portal/.vitepress/dist
+          bash scripts/release-integrity.sh verify-tree-sums docs-portal/.vitepress/dist
       - name: Upload Unified Pages Bundle Artifact
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -1233,8 +1232,62 @@ jobs:
           fi
           echo "All 9 CI verification jobs succeeded."
 
+  attest-bundles:
+    name: Attest Static Showcase Bundle Provenance
+    needs: [ci-complete, storybook-build, pages-verify]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - name: Download Storybook Static Showcase Artifact
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: storybook-static
+          path: /tmp/storybook-static
+
+      - name: Download Unified Pages Bundle Artifact
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: pages-bundle
+          path: /tmp/pages-bundle
+
+      - name: Verify Bundle SHA256SUMS Before Signing
+        run: |
+          for bundle_dir in /tmp/storybook-static /tmp/pages-bundle; do
+            if [ -n "$(find "$bundle_dir" -type l -print -quit 2>/dev/null || true)" ]; then
+              echo "::error::Symbolic links are forbidden inside '${bundle_dir}'."
+              exit 1
+            fi
+            if [ ! -s "${bundle_dir}/SHA256SUMS" ]; then
+              echo "::error::Missing or empty '${bundle_dir}/SHA256SUMS'."
+              exit 1
+            fi
+            (
+              cd "$bundle_dir"
+              sha256sum --check --strict SHA256SUMS
+            )
+            ACTUAL_FILES=$(cd "$bundle_dir" && find . -type f ! -path './SHA256SUMS' -print | sed 's|^\./||' | LC_ALL=C sort)
+            MANIFEST_FILES=$(sed 's/^[a-f0-9]\{64\}  //' "${bundle_dir}/SHA256SUMS" | LC_ALL=C sort)
+            if [ "$ACTUAL_FILES" != "$MANIFEST_FILES" ]; then
+              echo "::error::Unindexed or mismatched files detected in '${bundle_dir}'."
+              exit 1
+            fi
+          done
+
+      - name: Attest Static Showcase Bundle Checksums Provenance
+        timeout-minutes: 3
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            /tmp/storybook-static/SHA256SUMS
+            /tmp/pages-bundle/SHA256SUMS
+
   prepare-docs:
-    needs: [ci-complete, static-export-build, storybook-build, pages-verify]
+    needs: [verify, ci-complete, static-export-build, storybook-build, pages-verify]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -1297,19 +1350,28 @@ jobs:
         id: base-check
         if: steps.freshness.outputs.is_latest == 'true'
         env:
-          PAGES_BASE_PATH: ${{ steps.pages.outputs.base_path }}
-          BUILT_DEMO_BASE: ${{ needs.static-export-build.outputs.demo_base_path }}
+          CONFIGURED_BASE_PATH: ${{ steps.pages.outputs.base_path }}
+          VERIFIED_PORTAL_BASE: ${{ needs.verify.outputs.portal_base_path }}
+          VERIFIED_DEMO_BASE: ${{ needs.verify.outputs.demo_base_path }}
+          VERIFIED_STORYBOOK_BASE: ${{ needs.verify.outputs.storybook_base_path }}
         run: |
-          NORMALIZED_PAGES_BASE=$(printf '%s' "$PAGES_BASE_PATH" | sed 's:/*$::')
-          if [ -z "$NORMALIZED_PAGES_BASE" ]; then
-            EXPECTED_PORTAL_BASE="/"
-          else
-            EXPECTED_PORTAL_BASE="${NORMALIZED_PAGES_BASE}/"
-          fi
-          EXPECTED_DEMO_BASE="${NORMALIZED_PAGES_BASE}/demo"
+          RESOLVED_LINES=$(node scripts/build-pages-bundle.mjs --resolve-base-paths --base-path "$CONFIGURED_BASE_PATH")
+          EXPECTED_PORTAL_BASE=""
+          EXPECTED_DEMO_BASE=""
+          EXPECTED_STORYBOOK_BASE=""
+          while IFS='=' read -r key val; do
+            case "$key" in
+              portal_base_path) EXPECTED_PORTAL_BASE="$val" ;;
+              demo_base_path) EXPECTED_DEMO_BASE="$val" ;;
+              storybook_base_path) EXPECTED_STORYBOOK_BASE="$val" ;;
+            esac
+          done <<< "$RESOLVED_LINES"
           echo "expected_portal_base=${EXPECTED_PORTAL_BASE}" >> "$GITHUB_OUTPUT"
           echo "expected_demo_base=${EXPECTED_DEMO_BASE}" >> "$GITHUB_OUTPUT"
-          if [ "$EXPECTED_PORTAL_BASE" = "/wedding_website/" ] && [ "$BUILT_DEMO_BASE" = "$EXPECTED_DEMO_BASE" ]; then
+          echo "expected_storybook_base=${EXPECTED_STORYBOOK_BASE}" >> "$GITHUB_OUTPUT"
+          if [ "$EXPECTED_PORTAL_BASE" = "$VERIFIED_PORTAL_BASE" ] && \
+             [ "$EXPECTED_DEMO_BASE" = "$VERIFIED_DEMO_BASE" ] && \
+             [ "$EXPECTED_STORYBOOK_BASE" = "$VERIFIED_STORYBOOK_BASE" ]; then
             echo "reuse_bundle=true" >> "$GITHUB_OUTPUT"
           else
             echo "reuse_bundle=false" >> "$GITHUB_OUTPUT"
@@ -1320,6 +1382,9 @@ jobs:
         with:
           name: pages-bundle
           path: docs-portal/.vitepress/dist
+      - name: Verify Reused Pages Bundle Checksums
+        if: steps.freshness.outputs.is_latest == 'true' && steps.base-check.outputs.reuse_bundle == 'true'
+        run: bash scripts/release-integrity.sh verify-tree-sums docs-portal/.vitepress/dist
       - name: Setup Node.js for fallback Pages rebuild
         if: steps.freshness.outputs.is_latest == 'true' && steps.base-check.outputs.reuse_bundle != 'true'
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -1334,7 +1399,7 @@ jobs:
       - name: Build documentation portal for custom base path
         if: steps.freshness.outputs.is_latest == 'true' && steps.base-check.outputs.reuse_bundle != 'true'
         env:
-          VITEPRESS_BASE: ${{ steps.pages.outputs.base_path }}
+          VITEPRESS_BASE: ${{ steps.base-check.outputs.expected_portal_base }}
           SKIP_DOC_SYNC: 'true'
         run: npm run docs:build
       - name: Download Static Demo Showcase Artifact
@@ -1348,7 +1413,7 @@ jobs:
         timeout-minutes: 10
         env:
           EXPECTED_DEMO_BASE: ${{ steps.base-check.outputs.expected_demo_base }}
-          BUILT_DEMO_BASE: ${{ needs.static-export-build.outputs.demo_base_path }}
+          BUILT_DEMO_BASE: ${{ needs.verify.outputs.demo_base_path }}
         run: |
           if [ "$BUILT_DEMO_BASE" != "$EXPECTED_DEMO_BASE" ]; then
             echo "Rebuilding static demo for Pages base path: ${EXPECTED_DEMO_BASE}"
@@ -1366,10 +1431,34 @@ jobs:
         with:
           name: storybook-static
           path: docs-portal/.vitepress/dist/storybook
+      - name: Align Storybook base path with Pages configuration
+        if: steps.freshness.outputs.is_latest == 'true' && steps.base-check.outputs.reuse_bundle != 'true'
+        timeout-minutes: 10
+        env:
+          EXPECTED_STORYBOOK_BASE: ${{ steps.base-check.outputs.expected_storybook_base }}
+          BUILT_STORYBOOK_BASE: ${{ needs.verify.outputs.storybook_base_path }}
+        run: |
+          bash scripts/release-integrity.sh verify-tree-sums docs-portal/.vitepress/dist/storybook
+          if [ "$BUILT_STORYBOOK_BASE" != "$EXPECTED_STORYBOOK_BASE" ]; then
+            echo "Rebuilding static Storybook for Pages base path: ${EXPECTED_STORYBOOK_BASE}"
+            NEXT_PUBLIC_BASE_PATH="$EXPECTED_STORYBOOK_BASE" npm run build-storybook
+            bash scripts/release-integrity.sh generate-tree-sums storybook-static
+            bash scripts/release-integrity.sh verify-tree-sums storybook-static
+            rm -rf docs-portal/.vitepress/dist/storybook
+            mkdir -p docs-portal/.vitepress/dist/storybook
+            cp -R storybook-static/. docs-portal/.vitepress/dist/storybook/
+            rm -rf storybook-static
+          fi
+      - name: Verify Fallback Storybook Checksums & Generate Pages Bundle Checksums
+        if: steps.freshness.outputs.is_latest == 'true' && steps.base-check.outputs.reuse_bundle != 'true'
+        run: |
+          bash scripts/release-integrity.sh verify-tree-sums docs-portal/.vitepress/dist/storybook
+          touch docs-portal/.vitepress/dist/.nojekyll
+          bash scripts/release-integrity.sh generate-tree-sums docs-portal/.vitepress/dist
       - name: Add .nojekyll and verify unified Pages bundle
         if: steps.freshness.outputs.is_latest == 'true'
         run: |
-          touch docs-portal/.vitepress/dist/.nojekyll
+          bash scripts/release-integrity.sh verify-tree-sums docs-portal/.vitepress/dist
           for required_file in \
             docs-portal/.vitepress/dist/index.html \
             docs-portal/.vitepress/dist/demo/index.html \

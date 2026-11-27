@@ -297,13 +297,14 @@ describe('ThankYouNotesPage', () => {
     const trigger = screen.getByRole('button', { name: /Export Address Labels/i });
     expect(trigger).toHaveAttribute('aria-haspopup', 'true');
     expect(trigger).toHaveAttribute('aria-expanded', 'false');
-    expect(trigger).toHaveAttribute('aria-controls', 'export-labels-menu');
+    expect(trigger).not.toHaveAttribute('aria-controls');
     const triggerId = trigger.getAttribute('id');
     expect(triggerId).toBeTruthy();
 
     fireEvent.click(trigger);
 
     expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    expect(trigger).toHaveAttribute('aria-controls', 'export-labels-menu');
     const menu = screen.getByRole('menu');
     expect(menu).toBeInTheDocument();
     expect(menu).toHaveAttribute('id', 'export-labels-menu');
@@ -313,6 +314,10 @@ describe('ThankYouNotesPage', () => {
     expect(menuItems).toHaveLength(2);
     expect(menuItems[0]).toHaveTextContent(/Avery 5160 PDF/);
     expect(menuItems[1]).toHaveTextContent(/Avery 5163 PDF/);
+
+    fireEvent.keyDown(menuItems[0], { key: 'Tab' });
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    expect(trigger).not.toHaveAttribute('aria-controls');
   });
 
   it('closes export address labels dropdown on Escape and returns focus to trigger', async () => {

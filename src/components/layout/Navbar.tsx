@@ -15,7 +15,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import type { PublicAppConfig } from '@/lib/config';
 import { getNavLinks } from '@/lib/routes';
-import { useOverlay } from '@/hooks/useOverlay';
+import { useMenuPopup } from '@/hooks/useMenuPopup';
 import { useMenuNavigation } from '@/hooks/useMenuNavigation';
 import { ThemeSelector } from '../ui/ThemeSelector';
 import {
@@ -219,7 +219,7 @@ export default function Navbar({
     setIsGuideMenuOpen(false);
   }, []);
 
-  const { overlayRef: guideOverlayRef } = useOverlay(isGuideMenuOpen, handleCloseGuideMenu, {
+  const { menuRef: guideOverlayRef } = useMenuPopup(isGuideMenuOpen, handleCloseGuideMenu, {
     triggerRef: guideTriggerRef,
   });
   const { handleMenuKeyDown } = useMenuNavigation(guideOverlayRef);
@@ -469,7 +469,7 @@ export default function Navbar({
             type="button"
             aria-haspopup="menu"
             aria-expanded={isGuideMenuOpen}
-            aria-controls="desktop-guide-menu"
+            aria-controls={isGuideMenuOpen ? 'desktop-guide-menu' : undefined}
             onClick={() => setIsGuideMenuOpen((prev) => !prev)}
             onKeyDown={handleGuideTriggerKeyDown}
             className={`inline-flex items-center gap-1 px-2.5 lg:px-3 py-1.5 rounded-md text-sm font-medium whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus-ring,var(--color-primary))] focus-visible:ring-offset-2 ${
@@ -584,7 +584,7 @@ export default function Navbar({
             onClick={() => setIsMenuOpen((prev) => !prev)}
             type="button"
             aria-expanded={isMenuOpen}
-            aria-controls="mobile-menu"
+            aria-controls={isMenuOpen ? 'mobile-menu' : undefined}
             className="relative inline-flex items-center justify-center p-2 rounded-md text-[var(--color-primary-text)] hover:bg-[var(--btn-ghost-hover-bg,rgba(0,0,0,0.05))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[var(--color-focus-ring,var(--color-primary))]"
           >
             <span className="sr-only">{isMenuOpen ? 'Close main menu' : 'Open main menu'}</span>
@@ -678,6 +678,7 @@ export default function Navbar({
       {isPreview ? (
         <div
           ref={headerRef as React.RefObject<HTMLDivElement | null>}
+          inert={isMenuOpen || undefined}
           className={headerClassName}
         >
           {headerInnerContent}
@@ -686,6 +687,7 @@ export default function Navbar({
         <header
           ref={headerRef}
           aria-label="Site header"
+          inert={isMenuOpen || undefined}
           className={headerClassName}
         >
           {headerInnerContent}

@@ -1708,8 +1708,68 @@ describe('demoSeed, demoStore, and demoApiHandler runtime', () => {
       });
       expect(importRes.status).toBe(200);
 
+      const createdForDelete = (
+        await (
+          await window.fetch('/api/admin/attractions', {
+            method: 'POST',
+            body: JSON.stringify({
+              name: 'Temporary Attraction',
+              category: 'Sights',
+              description: 'To be deleted',
+            }),
+          })
+        ).json()
+      ).data;
+      const deleteAttrRes = await window.fetch(
+        `/api/admin/attractions/${createdForDelete.id}`,
+        { method: 'DELETE' }
+      );
+      expect(deleteAttrRes.status).toBe(200);
+
       const versionsList = (await (await window.fetch('/api/admin/versions')).json()).data.items;
       expect(versionsList.length).toBeGreaterThan(0);
+      for (const summaryEntry of versionsList) {
+        expect(
+          Object.keys(summaryEntry.data).every((key) => key === 'deleted')
+        ).toBe(true);
+      }
+      expect(
+        versionsList.some(
+          (entry: { action?: string; data?: { deleted?: boolean } }) =>
+            entry.action === 'DELETE' && entry.data?.deleted === true
+        )
+      ).toBe(true);
+
+      const singleEntityVersions = (
+        await (
+          await window.fetch(
+            '/api/admin/versions?entityType=AppConfig&entityId=app-config-primary'
+          )
+        ).json()
+      ).data.items;
+      expect(singleEntityVersions.length).toBeGreaterThan(0);
+      expect(singleEntityVersions[0].data.partner1Name).toBeDefined();
+      expect(singleEntityVersions[0].data.smtpPass).toBeUndefined();
+
+      const explicitOmitVersions = (
+        await (
+          await window.fetch(
+            '/api/admin/versions?entityType=AppConfig&entityId=app-config-primary&includeData=false'
+          )
+        ).json()
+      ).data.items;
+      expect(explicitOmitVersions[0].data).toEqual({});
+
+      const explicitFullVersions = (
+        await (await window.fetch('/api/admin/versions?includeData=true')).json()
+      ).data.items;
+      expect(
+        explicitFullVersions.some(
+          (entry: { data?: Record<string, unknown> }) =>
+            Boolean(entry.data && Object.keys(entry.data).length > 1)
+        )
+      ).toBe(true);
+
       const restorable = versionsList.find(
         (v: { hasSnapshot?: boolean }) => v.hasSnapshot !== false
       );

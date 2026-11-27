@@ -21,6 +21,11 @@ import {
 import { normalizePartyTags, splitMemberFullName } from '@/utils/invitationValidation';
 import { normalizeVenueWeddingDate } from '@/utils/venueDateTime';
 import {
+  sanitizeDemoVersionData,
+  shouldIncludeSnapshotData,
+  toSnapshotSummaryData,
+} from '@/utils/versionSnapshots';
+import {
   buildDemoHouseholdMembersForGuest,
   type DemoBroadcastRecipientRecord,
   type DemoBroadcastRecord,
@@ -61,38 +66,6 @@ import { isDemoLandmarkShape } from './entityEngine';
 
 function isDemoAddressCollectionOnly(partyTags: unknown): boolean {
   return normalizePartyTags(partyTags).includes('address-collection');
-}
-
-function maskEmail(email: string): string {
-  if (!email.includes('@')) return '[REDACTED]';
-  const [local, domain] = email.split('@');
-  if (!local) return '[REDACTED]';
-  if (local.length <= 2) return `${local[0] || ''}***@${domain}`;
-  return `${local[0]}***${local[local.length - 1]}@${domain}`;
-}
-
-function sanitizeVersionData(value: unknown): unknown {
-  if (!value || typeof value !== 'object') return value;
-  if (Array.isArray(value)) return value.map(sanitizeVersionData);
-  const record = value as Record<string, unknown>;
-  const out: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(record)) {
-    const lk = k.toLowerCase();
-    if (lk.includes('email') && typeof v === 'string' && v.length > 0) {
-      out[k] = maskEmail(v);
-    } else if (
-      (lk === 'phone' || lk === 'phonenumber' || lk === 'shippingphone') &&
-      typeof v === 'string' &&
-      v.length > 0
-    ) {
-      out[k] = '[REDACTED]';
-    } else if (v && typeof v === 'object') {
-      out[k] = sanitizeVersionData(v);
-    } else {
-      out[k] = v;
-    }
-  }
-  return out;
 }
 
 function toBroadcastHistoryDto(msg: DemoBroadcastRecord) {
@@ -2491,6 +2464,10 @@ export async function handleAdminWorkflowRoutes(
     const dataset = getActiveArchetypeDataset();
     const entityType = (url.searchParams.get('entityType') || '').trim();
     const entityId = (url.searchParams.get('entityId') || '').trim();
+    const includeData = shouldIncludeSnapshotData(
+      url.searchParams.get('includeData'),
+      entityId
+    );
     const page = Math.max(1, parseInt(url.searchParams.get('page') || '1', 10) || 1);
     const limit = Math.min(
       100,
@@ -2504,7 +2481,7 @@ export async function handleAdminWorkflowRoutes(
     });
 
     const total = filtered.length;
-    const totalPages = Math.max(1, Math.ceil(total / limit));
+    const totalPages = limit > 0 ? Math.ceil(total / limit) : 0;
     const items = filtered.slice((page - 1) * limit, page * limit).map((v) => ({
       id: v.id,
       entityType: v.entityType,
@@ -2514,7 +2491,9 @@ export async function handleAdminWorkflowRoutes(
       author: v.createdBy,
       createdBy: v.createdBy,
       createdAt: v.createdAt,
-      data: sanitizeVersionData(v.data),
+      data: includeData
+        ? sanitizeDemoVersionData(v.data, v.entityType)
+        : toSnapshotSummaryData(v.data, v.action),
     }));
 
     const pagination = {

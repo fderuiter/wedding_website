@@ -1401,6 +1401,7 @@ export const AppConfigSchema = z.object({
   showAddToCalendar: z.boolean().default(true).describe('Toggle controlling whether Add-to-Calendar links and ICS downloads are shown.'),
   rsvpOpen: z.boolean().default(true).describe('Manual toggle controlling whether online guest RSVP submissions and edits are enabled.'),
   isRsvpOpen: z.boolean().optional().describe('Virtual server-evaluated flag indicating whether online RSVPs are currently open after evaluating manual lock, cutoff date, and grace period.'),
+  isMessagingActive: z.boolean().optional().describe('Virtual server-evaluated flag indicating whether an outbound email or SMS provider is active for self-service guest sign-in link delivery.'),
   rsvpDeadlineDate: z.string().refine((val) => val === '' || isValidRsvpDeadlineDate(val), { message: 'Invalid RSVP deadline date. Expected YYYY-MM-DD.' }).default('').describe('Optional global RSVP cutoff calendar date (YYYY-MM-DD) enforced at midnight in the venue timezone.'),
   rsvpGracePeriodHours: z.number().int().refine(isValidRsvpGracePeriodHours, { message: 'Invalid RSVP grace period hours.' }).default(0).describe('Admin-only silent grace window in hours (0, 12, 24, 48, 72, or 168) after the midnight RSVP cutoff; omitted from public DTOs.'),
   rsvpClosedMessage: z.string().default('').transform((val) => sanitizeRsvpClosedMessage(val)).describe('Sanitized custom message displayed to guests and returned by RSVP APIs once online RSVPs close.'),
@@ -1532,6 +1533,7 @@ export const PublicAppConfigSchema = z
     showAddToCalendar: z.boolean().default(true),
     rsvpOpen: z.boolean().default(true),
     isRsvpOpen: z.boolean().optional(),
+    isMessagingActive: z.boolean().optional(),
     rsvpDeadlineDate: z.string().default(''),
     rsvpClosedMessage: z
       .string()

@@ -1359,4 +1359,204 @@ describe('Static Demo Fetch Router & Versioned Store', () => {
       isVerified: false,
     });
   });
+
+  it('simulates self-service sign-in link recovery locally in static demo mode with anti-enumeration, cooldowns, and one-click RSVP', async () => {
+    const { resetHouseholdRecoveryCooldownsForTests } = await import(
+      '@/utils/guestSignInRecovery'
+    );
+    resetHouseholdRecoveryCooldownsForTests();
+
+    const { getActiveAppConfig, toPublicConfigDto } = await import('../dtoMappers');
+    const store = createDemoStore({ storage: null, initialArchetype: 'classic' });
+    const router = createStaticDemoRouter({ store, mode: 'browser' });
+
+    // Public config DTO exposes virtual isMessagingActive: true without leaking smtpHost
+    const publicCfg = toPublicConfigDto(getActiveAppConfig(store.getSnapshot()));
+    expect(publicCfg.isMessagingActive).toBe(true);
+    expect(publicCfg.smtpHost).toBeUndefined();
+
+    // GET /api/guest/recover reports messagingActive: true
+    const capRes = await router('http://localhost:3000/api/guest/recover');
+    const capJson = await capRes!.json();
+    expect(capJson.data ?? capJson).toMatchObject({
+      messagingActive: true,
+      emailActive: true,
+    });
+
+    const initialBroadcastCount = store.getSnapshot().broadcastMessage.length;
+    const targetInvite = store.getSnapshot().invitationCode.find(
+      (inv) => !inv.isSample && !(inv.partyTags ?? []).includes('address-collection'),
+    )!;
+    const targetMemberEmail =
+      targetInvite.email ||
+      store
+        .getSnapshot()
+        .householdMember.find((m) => m.invitationCodeId === targetInvite.id && m.email)?.email ||
+      'guest1@example.org';
+
+    // Matched recovery records a simulated local broadcast with /guest?code=<CODE> and returns generic 200
+    const matchedRes = await router('http://localhost:3000/api/guest/recover', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ identifier: targetMemberEmail }),
+    });
+    expect(matchedRes?.status).toBe(200);
+    const matchedJson = await matchedRes!.json();
+    expect(matchedJson.success).toBe(true);
+    expect(JSON.stringify(matchedJson)).not.toContain(targetInvite.code);
+    expect(JSON.stringify(matchedJson)).not.toContain(targetInvite.guestName);
+
+    const afterMatchSnap = store.getSnapshot();
+    expect(afterMatchSnap.broadcastMessage.length).toBe(initialBroadcastCount + 1);
+    const simulatedBroadcast = afterMatchSnap.broadcastMessage[0];
+    expect(simulatedBroadcast.body).toContain(
+      `/guest?code=${encodeURIComponent(targetInvite.code)}`,
+    );
+
+    // Repeat submission within cooldown window returns identical 200 without adding another message
+    const cooldownRes = await router('http://localhost:3000/api/guest/recover', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ identifier: targetMemberEmail }),
+    });
+    expect(cooldownRes?.status).toBe(200);
+    expect(await cooldownRes!.json()).toEqual(matchedJson);
+    expect(store.getSnapshot().broadcastMessage.length).toBe(initialBroadcastCount + 1);
+
+    // Unmatched and honeypot submissions return identical 200 JSON
+    const unmatchedRes = await router('http://localhost:3000/api/guest/recover', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ identifier: 'unknown.person@example.org' }),
+    });
+    expect(await unmatchedRes!.json()).toEqual(matchedJson);
+
+    const honeypotRes = await router('http://localhost:3000/api/guest/recover', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ identifier: targetMemberEmail, website: 'https://bot.invalid' }),
+    });
+    expect(await honeypotRes!.json()).toEqual(matchedJson);
+
+    // Following the simulated /guest?code=<CODE> link authenticates the household and enables POST /api/rsvp
+    const urlMatch = simulatedBroadcast.body.match(/\/guest\?code=([A-Za-z0-9_-]+)/);
+    expect(urlMatch).not.toBeNull();
+    const validateRes = await router('http://localhost:3000/api/registry/validate-code', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code: decodeURIComponent(urlMatch![1]) }),
+    });
+    expect(validateRes?.status).toBe(200);
+
+    const rsvpRes = await router('http://localhost:3000/api/rsvp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        rsvps: [{ subEventId: 'sub-3', status: 'attending', plusOneCount: 0 }],
+      }),
+    });
+    expect(rsvpRes?.status).toBe(200);
+
+    // Disabling outbound providers in admin settings hides isMessagingActive and returns 503 on POST /api/guest/recover
+    await router('http://localhost:3000/api/admin/settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        emailProvider: 'smtp',
+        smtpHost: '',
+        smtpUser: '',
+        smsProvider: 'none',
+      }),
+    });
+    const disabledPublicCfg = toPublicConfigDto(getActiveAppConfig(store.getSnapshot()));
+    expect(disabledPublicCfg.isMessagingActive).toBe(false);
+    const disabledCapJson = await (
+      await router('http://localhost:3000/api/guest/recover')
+    )!.json();
+    expect((disabledCapJson.data ?? disabledCapJson).messagingActive).toBe(false);
+
+    const disabledRecoverRes = await router('http://localhost:3000/api/guest/recover', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ identifier: targetMemberEmail }),
+    });
+    expect(disabledRecoverRes?.status).toBe(503);
+  });
+
+  it('scopes GET /api/admin/versions to summary metadata unless entityId or includeData=true is specified and strips secrets/PII', async () => {
+    const store = createDemoStore({ storage: null, initialArchetype: 'classic' });
+    store.mutate((draft) => {
+      draft.snapshotVersion.unshift(
+        {
+          id: 'ver-static-deleted',
+          entityType: 'RegistryItem',
+          entityId: 'reg-del-1',
+          author: 'Admin',
+          createdAt: '2026-06-10T12:00:00.000Z',
+          data: {
+            deleted: true,
+            previous: {
+              name: 'Deleted Vase',
+              email: 'donor@example.org',
+              phone: '555-0123',
+              ssn: '123-45-6789',
+            },
+          },
+        },
+        {
+          id: 'ver-static-appconfig',
+          entityType: 'AppConfig',
+          entityId: 'global',
+          author: 'Admin',
+          createdAt: '2026-06-11T12:00:00.000Z',
+          data: {
+            ...draft.appConfig[0],
+            smtpPass: 'static-secret-pass',
+            resendApiKey: 're_static_secret',
+            twilioAuthToken: 'twilio-static-secret',
+          },
+        },
+      );
+    });
+
+    const router = createStaticDemoRouter({ store, mode: 'browser' });
+
+    const summaryRes = await router('http://localhost:3000/api/admin/versions?page=1&limit=50');
+    expect(summaryRes?.status).toBe(200);
+    const summaryJson = await summaryRes!.json();
+    const appSummary = summaryJson.data.items.find((v: { id: string }) => v.id === 'ver-static-appconfig');
+    const deletedSummary = summaryJson.data.items.find((v: { id: string }) => v.id === 'ver-static-deleted');
+    expect(appSummary.data).toEqual({});
+    expect(deletedSummary.data).toEqual({ deleted: true });
+
+    const entityRes = await router(
+      'http://localhost:3000/api/admin/versions?entityType=AppConfig&entityId=global',
+    );
+    const entityJson = await entityRes!.json();
+    const appFull = entityJson.data.items.find((v: { id: string }) => v.id === 'ver-static-appconfig');
+    expect(appFull.data.partner1Name).toBeDefined();
+    expect(appFull.data.smtpHost).toBeUndefined();
+    expect(appFull.data.smtpPass).toBeUndefined();
+    expect(appFull.data.resendApiKey).toBeUndefined();
+    expect(appFull.data.twilioAuthToken).toBeUndefined();
+    expect(appFull.data.contactEmail).toBe('h***s@wedding-demo.org');
+
+    const omitRes = await router(
+      'http://localhost:3000/api/admin/versions?entityType=AppConfig&entityId=global&includeData=false',
+    );
+    const omitJson = await omitRes!.json();
+    expect(omitJson.data.items[0].data).toEqual({});
+
+    const includeDataRes = await router(
+      'http://localhost:3000/api/admin/versions?includeData=true',
+    );
+    const includeDataJson = await includeDataRes!.json();
+    const deletedFull = includeDataJson.data.items.find(
+      (v: { id: string }) => v.id === 'ver-static-deleted',
+    );
+    expect(deletedFull.data.deleted).toBe(true);
+    expect(deletedFull.data.previous.email).toBe('d***r@example.org');
+    expect(deletedFull.data.previous.phone).toBe('[REDACTED]');
+    expect(deletedFull.data.previous.ssn).toBe('[REDACTED]');
+  });
 });

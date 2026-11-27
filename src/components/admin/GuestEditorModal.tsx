@@ -2086,8 +2086,7 @@ export const GuestEditorModal: React.FC<GuestEditorModalProps> = ({
       isDirty={isDirty}
       title="Edit Guest Details"
       description="Update guest profile, party grouping, dietary notes, mailing address, or admin RSVP and meal overrides. Existing seating assignments are preserved."
-      className="max-w-2xl max-h-[90vh] flex flex-col"
-      contentClassName="px-6 py-4 overflow-y-auto max-h-[75vh]"
+      className="max-w-2xl"
     >
       <GuestEditorModalBody
         key={guest.id}

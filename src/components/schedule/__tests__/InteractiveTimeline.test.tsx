@@ -105,14 +105,23 @@ describe('InteractiveTimeline Component', () => {
     expect(calendarButtons.length).toBe(3);
 
     const triggerIds = calendarButtons.map((btn) => btn.getAttribute('id'));
-    const menuIds = calendarButtons.map((btn) => btn.getAttribute('aria-controls'));
     expect(new Set(triggerIds).size).toBe(3);
-    expect(new Set(menuIds).size).toBe(3);
+    for (const btn of calendarButtons) {
+      expect(btn).not.toHaveAttribute('aria-controls');
+    }
 
-    fireEvent.click(calendarButtons[1]);
-    const openMenu = screen.getByRole('menu');
-    expect(openMenu).toHaveAttribute('id', menuIds[1]);
-    expect(openMenu).toHaveAttribute('aria-labelledby', triggerIds[1]);
+    const menuIds: Array<string | null> = [];
+    for (let i = 0; i < calendarButtons.length; i += 1) {
+      fireEvent.click(calendarButtons[i]);
+      const openMenu = screen.getByRole('menu');
+      const controlledId = calendarButtons[i].getAttribute('aria-controls');
+      expect(controlledId).toBeTruthy();
+      expect(openMenu).toHaveAttribute('id', controlledId);
+      expect(openMenu).toHaveAttribute('aria-labelledby', triggerIds[i]);
+      menuIds.push(controlledId);
+      fireEvent.keyDown(document, { key: 'Escape' });
+    }
+    expect(new Set(menuIds).size).toBe(3);
   });
 
   it('returns null when no structured events exist', () => {
