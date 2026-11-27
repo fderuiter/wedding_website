@@ -232,6 +232,15 @@ function findForbiddenHookCommands(hookContent: string): string[] {
   ) {
     forbidden.push('git checkout -- .');
   }
+  if (/\bgit\s+restore\b/.test(hookContent) || /['"]restore['"]/.test(hookContent)) {
+    forbidden.push('git restore');
+  }
+  if (
+    /\blint-staged\b/.test(hookContent) &&
+    (!hookContent.includes('--no-stash') || !hookContent.includes('--no-revert'))
+  ) {
+    forbidden.push('npx lint-staged (without --no-stash and --no-revert)');
+  }
   return forbidden;
 }
 
@@ -1016,6 +1025,26 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
 
   if (!/\blint-staged\b/.test(preCommitRaw)) {
     errors.push('.githooks/pre-commit: Must run "npx lint-staged" on staged files');
+  } else {
+    if (
+      !preCommitRaw.includes('--no-stash') ||
+      !preCommitRaw.includes('--no-revert') ||
+      !preCommitRaw.includes('--no-hide-partially-staged') ||
+      !/--diff(?:=|\s*,\s*['"])["']?--staged/.test(preCommitRaw)
+    ) {
+      errors.push(
+        '.githooks/pre-commit: Must invoke "npx lint-staged" with "--no-stash", "--no-revert", "--no-hide-partially-staged", and "--diff=--staged"'
+      );
+    }
+    if (
+      !preCommitRaw.includes('write-tree') ||
+      !preCommitRaw.includes('hydrateWorktreeCaches') ||
+      !preCommitRaw.includes('worktree-cache.mjs')
+    ) {
+      errors.push(
+        '.githooks/pre-commit: Must materialize the staged Git index ("git write-tree") into an ephemeral snapshot hydrated via "scripts/quality/worktree-cache.mjs"'
+      );
+    }
   }
   const lintStagedConfig = pkg['lint-staged'] ?? {};
   const lintStagedJsCmd = lintStagedConfig['*.{js,jsx,ts,tsx,mjs,cjs,mts,cts}'] ?? '';
@@ -1042,6 +1071,18 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
     if (!lintStagedValues.some((cmd) => cmd.includes(requiredValidator))) {
       errors.push(`package.json: "lint-staged" must route staged files to "${requiredValidator}"`);
     }
+  }
+  const hasManifestStandaloneRouting = Object.entries(lintStagedConfig).some(
+    ([pattern, cmd]) =>
+      pattern.includes('package.json') &&
+      pattern.includes('package-lock.json') &&
+      cmd.includes('check:standalone') &&
+      cmd.includes('--static-only')
+  );
+  if (!hasManifestStandaloneRouting) {
+    errors.push(
+      'package.json: "lint-staged" must route staged "package.json" and "package-lock.json" edits to "check:standalone -- --static-only"'
+    );
   }
   if (
     !scripts['docs:sync']?.includes('scripts/generate-openapi.ts') ||
@@ -1472,6 +1513,15 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
       '.github/CONTRIBUTING.md: Commit Your Changes section must document ".githooks/pre-commit" running "npx lint-staged"'
     );
   }
+  if (
+    !contributingCommitSection.includes('write-tree') ||
+    !contributingCommitSection.includes('worktree-cache.mjs') ||
+    !contributingCommitSection.includes('package-lock.json')
+  ) {
+    errors.push(
+      '.github/CONTRIBUTING.md: Commit Your Changes section must document ephemeral staged snapshot ("git write-tree" / "scripts/quality/worktree-cache.mjs") and manifest routing ("package-lock.json")'
+    );
+  }
   if (/\bgit\s+stash\b/i.test(contributingCommitSection)) {
     errors.push(
       '.github/CONTRIBUTING.md: Commit Your Changes section must not prescribe or document "git stash"'
@@ -1752,6 +1802,14 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
   ) {
     errors.push(
       'AGENTS.md: Verification & Quality Gates section must prescribe "npm run check:static" and "npm run quality" delegating to "scripts/check-quality.ts"'
+    );
+  }
+  if (
+    !agentsQualitySection.includes('write-tree') ||
+    !agentsQualitySection.includes('worktree-cache.mjs')
+  ) {
+    errors.push(
+      'AGENTS.md: Verification & Quality Gates section must document ".githooks/pre-commit" ephemeral staged snapshot ("git write-tree" / "scripts/quality/worktree-cache.mjs")'
     );
   }
   for (const agentsCrossRef of [

@@ -899,19 +899,120 @@ function evaluateWorkflowRecord(
   );
 }
 
-function collectActionPins(workflowsDir: string = WORKFLOWS_DIR): {
+function resolveScopedWorkflowPaths(
+  targetFiles: string[],
+  cwd: string = process.cwd()
+): string[] {
+  const seen = new Set<string>();
+  const resolved: string[] = [];
+  for (const rawFile of targetFiles) {
+    const absPath = path.resolve(cwd, rawFile);
+    if (seen.has(absPath)) {
+      continue;
+    }
+    seen.add(absPath);
+    try {
+      if (fs.existsSync(absPath) && fs.statSync(absPath).isFile()) {
+        resolved.push(absPath);
+      }
+    } catch {
+      // Ignore deleted or unreadable workflow paths
+    }
+  }
+  return resolved.sort();
+}
+
+function findReachableCalleeFiles(
+  seedFiles: Iterable<string>,
+  records: ParsedWorkflowRecord[]
+): Set<string> {
+  const edges = records.flatMap((record) => extractLocalCallEdges(record));
+  const reachable = new Set<string>();
+  const queue = Array.from(seedFiles);
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    for (const edge of edges) {
+      if (edge.callerFile === current && !reachable.has(edge.targetFile)) {
+        reachable.add(edge.targetFile);
+        queue.push(edge.targetFile);
+      }
+    }
+  }
+  return reachable;
+}
+
+function collectActionPins(
+  workflowsDir: string = WORKFLOWS_DIR,
+  targetFiles?: string[]
+): {
   workflowFiles: string[];
   violations: Violation[];
   pinnedOccurrences: PinnedActionOccurrence[];
 } {
+  const baseDir = path.resolve(workflowsDir, '..', '..');
+  const violations: Violation[] = [];
+  const pinnedOccurrences: PinnedActionOccurrence[] = [];
+
+  if (targetFiles && targetFiles.length > 0) {
+    const resolvedPaths = resolveScopedWorkflowPaths(targetFiles, baseDir);
+    const workflowFiles = resolvedPaths.map((absPath) =>
+      path.relative(workflowsDir, absPath).replace(/\\/g, '/')
+    );
+    if (resolvedPaths.length === 0) {
+      return { workflowFiles, violations, pinnedOccurrences };
+    }
+
+    const scopedAbsSet = new Set(resolvedPaths.map((p) => path.resolve(p)));
+    const scopedRecords = resolvedPaths.map((absPath) =>
+      parseWorkflowRecord(absPath, baseDir)
+    );
+    const peerRecords: ParsedWorkflowRecord[] = [];
+    if (fs.existsSync(workflowsDir)) {
+      for (const entry of fs.readdirSync(workflowsDir).sort()) {
+        if (!entry.endsWith('.yml') && !entry.endsWith('.yaml')) {
+          continue;
+        }
+        const peerAbsPath = path.resolve(workflowsDir, entry);
+        if (scopedAbsSet.has(peerAbsPath)) {
+          continue;
+        }
+        try {
+          if (fs.statSync(peerAbsPath).isFile()) {
+            const peer = parseWorkflowRecord(peerAbsPath, baseDir);
+            if (peer.doc.errors.length === 0 && peer.doc.warnings.length === 0) {
+              peerRecords.push(peer);
+            }
+          }
+        } catch {
+          // Ignore unreadable peer workflow files during scoped checks
+        }
+      }
+    }
+
+    const allRecords = [...scopedRecords, ...peerRecords];
+    propagateUntrustedTriggersAcrossWorkflows(allRecords);
+
+    for (const record of scopedRecords) {
+      evaluateWorkflowRecord(record, violations, pinnedOccurrences);
+    }
+
+    const reachableCallees = findReachableCalleeFiles(
+      scopedRecords.map((r) => r.fileName),
+      allRecords
+    );
+    for (const peer of peerRecords) {
+      if (reachableCallees.has(peer.fileName) && peer.propagatedTriggers.size > 0) {
+        evaluateWorkflowRecord(peer, violations, []);
+      }
+    }
+
+    return { workflowFiles, violations, pinnedOccurrences };
+  }
+
   const files = fs.readdirSync(workflowsDir).sort();
   const workflowFiles = files.filter(
     (f) => f.endsWith('.yml') || f.endsWith('.yaml')
   );
-
-  const baseDir = path.resolve(workflowsDir, '..', '..');
-  const violations: Violation[] = [];
-  const pinnedOccurrences: PinnedActionOccurrence[] = [];
 
   const records = workflowFiles.map((file) =>
     parseWorkflowRecord(path.join(workflowsDir, file), baseDir)
@@ -925,23 +1026,30 @@ function collectActionPins(workflowsDir: string = WORKFLOWS_DIR): {
   return { workflowFiles, violations, pinnedOccurrences };
 }
 
-export function checkActionPins(workflowsDir: string = WORKFLOWS_DIR): {
+export function checkActionPins(
+  workflowsDir: string = WORKFLOWS_DIR,
+  targetFiles?: string[]
+): {
   workflowFiles: string[];
   violations: Violation[];
 } {
-  const { workflowFiles, violations } = collectActionPins(workflowsDir);
+  const { workflowFiles, violations } = collectActionPins(workflowsDir, targetFiles);
   return { workflowFiles, violations };
 }
 
 export async function verifyUpstreamActionPins(
   workflowsDir: string = WORKFLOWS_DIR,
-  options: VerifyUpstreamOptions = {}
+  options: VerifyUpstreamOptions = {},
+  targetFiles?: string[]
 ): Promise<{
   workflowFiles: string[];
   violations: Violation[];
   verifiedPins: number;
 }> {
-  const { workflowFiles, violations, pinnedOccurrences } = collectActionPins(workflowsDir);
+  const { workflowFiles, violations, pinnedOccurrences } = collectActionPins(
+    workflowsDir,
+    targetFiles
+  );
   const verifiedPins = await verifyUpstreamPins(pinnedOccurrences, violations, options);
 
   return {
@@ -985,6 +1093,7 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
+  const fileArgs = args.filter((arg) => /\.ya?ml$/i.test(arg));
   const verifyUpstream = args.includes('--verify-upstream');
   console.log(
     verifyUpstream
@@ -992,14 +1101,18 @@ async function main(): Promise<void> {
       : '🔍 Checking GitHub Actions workflow YAML 1.2 syntax, action pin SHAs, and version comments...'
   );
 
-  if (!fs.existsSync(WORKFLOWS_DIR)) {
+  if (fileArgs.length === 0 && !fs.existsSync(WORKFLOWS_DIR)) {
     console.error(`❌ Workflows directory not found at: ${WORKFLOWS_DIR}`);
     process.exit(1);
   }
 
+  const scopedFiles = fileArgs.length > 0 ? fileArgs : undefined;
+
   if (verifyUpstream) {
     const { workflowFiles, violations, verifiedPins } = await verifyUpstreamActionPins(
-      WORKFLOWS_DIR
+      WORKFLOWS_DIR,
+      {},
+      scopedFiles
     );
     if (violations.length > 0) {
       reportViolationsAndExit(violations);
@@ -1010,7 +1123,7 @@ async function main(): Promise<void> {
     process.exit(0);
   }
 
-  const { workflowFiles, violations } = checkActionPins(WORKFLOWS_DIR);
+  const { workflowFiles, violations } = checkActionPins(WORKFLOWS_DIR, scopedFiles);
   if (violations.length > 0) {
     reportViolationsAndExit(violations);
   }
