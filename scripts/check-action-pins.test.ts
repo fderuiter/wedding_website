@@ -862,4 +862,145 @@ describe('check-action-pins', () => {
     expect(reusableCallerJobCount).toBeGreaterThan(0);
     expect(configuredStepTimeoutCount).toBeGreaterThan(0);
   });
+
+  it('scopes workflow scans to passed CLI .yml/.yaml paths while preserving full directory scanning with zero file arguments', () => {
+    const cleanPath = path.join(workflowsDir, 'clean.yml');
+    const brokenDraftPath = path.join(workflowsDir, 'broken-draft.yml');
+
+    fs.writeFileSync(
+      cleanPath,
+      [
+        'name: Clean Workflow',
+        'on:',
+        '  workflow_dispatch:',
+        'permissions:',
+        '  contents: read',
+        'jobs:',
+        '  verify:',
+        '    runs-on: ubuntu-latest',
+        '    timeout-minutes: 10',
+        '    steps:',
+        '      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1',
+        '        with:',
+        '          persist-credentials: false',
+        '',
+      ].join('\n')
+    );
+    fs.writeFileSync(
+      brokenDraftPath,
+      [
+        'name: Broken Draft Workflow',
+        'on: [push]',
+        'permissions:',
+        '  contents: read',
+        'jobs:',
+        '  bad:',
+        '    runs-on: ubuntu-latest',
+        '    timeout-minutes: 10',
+        '    steps:',
+        '      - uses: actions/checkout@v4',
+        '',
+      ].join('\n')
+    );
+
+    // Scoped CLI call on clean.yml ignores broken-draft.yml
+    const scopedPass = spawnSync(
+      process.execPath,
+      [TSX_CLI_PATH, CHECK_SCRIPT_PATH, '.github/workflows/clean.yml'],
+      { cwd: tempDir, encoding: 'utf8' }
+    );
+    expect(scopedPass.status).toBe(0);
+    expect(scopedPass.stdout).toContain('All 1 workflow file(s) parse cleanly');
+
+    // Scoped CLI call on a deleted workflow path exits 0 cleanly
+    const deletedPass = spawnSync(
+      process.execPath,
+      [TSX_CLI_PATH, CHECK_SCRIPT_PATH, '.github/workflows/deleted-workflow.yml'],
+      { cwd: tempDir, encoding: 'utf8' }
+    );
+    expect(deletedPass.status).toBe(0);
+    expect(deletedPass.stdout).toContain('All 0 workflow file(s) parse cleanly');
+
+    // Scoped CLI call on broken-draft.yml fails
+    const scopedFail = spawnSync(
+      process.execPath,
+      [TSX_CLI_PATH, CHECK_SCRIPT_PATH, brokenDraftPath],
+      { cwd: tempDir, encoding: 'utf8' }
+    );
+    expect(scopedFail.status).toBe(1);
+    expect(scopedFail.stderr).toContain('.github/workflows/broken-draft.yml');
+
+    // Zero file arguments preserves full-repository workflow scan
+    const fullScanFail = spawnSync(process.execPath, [TSX_CLI_PATH, CHECK_SCRIPT_PATH], {
+      cwd: tempDir,
+      encoding: 'utf8',
+    });
+    expect(fullScanFail.status).toBe(1);
+    expect(fullScanFail.stderr).toContain('.github/workflows/broken-draft.yml');
+
+    // Scoped CLI call propagates workflow_run across local workflow_call peers in both directions
+    const callerPath = path.join(workflowsDir, 'scoped-caller.yml');
+    const calleePath = path.join(workflowsDir, 'scoped-callee.yml');
+    fs.writeFileSync(
+      callerPath,
+      [
+        'name: Scoped Untrusted Caller',
+        'on:',
+        '  workflow_run:',
+        '    workflows: [CI]',
+        '    types: [completed]',
+        'permissions:',
+        '  contents: read',
+        'jobs:',
+        '  invoke:',
+        '    permissions:',
+        '      contents: read',
+        '      packages: write',
+        '    uses: ./.github/workflows/scoped-callee.yml',
+        '',
+      ].join('\n')
+    );
+    fs.writeFileSync(
+      calleePath,
+      [
+        'name: Scoped Reusable Callee',
+        'on:',
+        '  workflow_call:',
+        'permissions:',
+        '  contents: read',
+        'jobs:',
+        '  unsafe-write:',
+        '    runs-on: ubuntu-latest',
+        '    timeout-minutes: 10',
+        '    permissions:',
+        '      contents: read',
+        '      packages: write',
+        '    steps:',
+        '      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1',
+        '        with:',
+        '          persist-credentials: false',
+        '',
+      ].join('\n')
+    );
+
+    const scopedCalleeFail = spawnSync(
+      process.execPath,
+      [TSX_CLI_PATH, CHECK_SCRIPT_PATH, '.github/workflows/scoped-callee.yml'],
+      { cwd: tempDir, encoding: 'utf8' }
+    );
+    expect(scopedCalleeFail.status).toBe(1);
+    expect(scopedCalleeFail.stderr).toContain(
+      'workflow_run (via workflow_call from scoped-caller.yml)'
+    );
+
+    const scopedCallerFail = spawnSync(
+      process.execPath,
+      [TSX_CLI_PATH, CHECK_SCRIPT_PATH, '.github/workflows/scoped-caller.yml'],
+      { cwd: tempDir, encoding: 'utf8' }
+    );
+    expect(scopedCallerFail.status).toBe(1);
+    expect(scopedCallerFail.stderr).toContain(
+      'workflow_run (via workflow_call from scoped-caller.yml)'
+    );
+  });
 });

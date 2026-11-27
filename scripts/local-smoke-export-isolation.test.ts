@@ -368,7 +368,7 @@ describe('local smoke isolation, staged static exports, and untracked next-env.d
       expect(tsconfig.exclude).toContain('.next/export-stage');
     });
 
-    it('keeps next-env.d.ts untracked in Git while conditionally running next typegen in typecheck, type-check, and postinstall', () => {
+    it('keeps next-env.d.ts untracked in Git while conditionally running next typegen via scripts/quality/run-typecheck.mjs and postinstall', () => {
       const trackedCheck = spawnSync('git', ['ls-files', 'next-env.d.ts'], {
         cwd: repoRoot,
         encoding: 'utf8',
@@ -379,16 +379,23 @@ describe('local smoke isolation, staged static exports, and untracked next-env.d
       const pkg = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8')) as {
         scripts: Record<string, string>;
       };
-      expect(
-        pkg.scripts.typecheck.startsWith(
-          '([ -f next-env.d.ts ] && [ -f .next/types/routes.d.ts ] || next typegen) && '
-        )
-      ).toBe(true);
-      expect(
-        pkg.scripts['type-check'].startsWith(
-          '([ -f next-env.d.ts ] && [ -f .next/types/routes.d.ts ] || next typegen) && '
-        )
-      ).toBe(true);
+      expect(pkg.scripts.typecheck).toContain('scripts/quality/run-typecheck.mjs');
+      expect(pkg.scripts['type-check']).toContain('scripts/quality/run-typecheck.mjs');
+      expect(pkg.scripts.typecheck).not.toContain('utimesSync');
+      expect(pkg.scripts['type-check']).not.toContain('utimesSync');
+      expect(pkg.scripts.typecheck).not.toContain('tsc -b');
+      expect(pkg.scripts['type-check']).not.toContain('tsc -b');
+
+      const runTypecheckSource = fs.readFileSync(
+        path.join(repoRoot, 'scripts/quality/run-typecheck.mjs'),
+        'utf8'
+      );
+      expect(runTypecheckSource).toContain('next-env.d.ts');
+      expect(runTypecheckSource).toContain('validator.ts');
+      expect(runTypecheckSource).toContain('.route-manifest.json');
+      expect(runTypecheckSource).toContain("'typegen'");
+      expect(runTypecheckSource).not.toContain('utimesSync');
+
       expect(pkg.scripts.postinstall).toBe(
         '([ "$SKIP_NEXT_TYPEGEN" = "true" ] || [ "$STATIC_EXPORT" = "true" ] || next typegen) && prisma generate && node scripts/pretest.mjs --record-install-state || node -e "process.exit(process.env.npm_config_package_lock_only === \'true\' ? 0 : 1)"'
       );
