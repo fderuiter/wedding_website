@@ -1,0 +1,384 @@
+name: Publish GitHub Release
+
+on:
+  workflow_run:
+    workflows:
+      - Publish Release Artifact
+    types:
+      - completed
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Release version tag to publish (e.g., v0.1.0)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: github-release-${{ github.event.workflow_run.head_branch || inputs.tag_name || github.ref_name }}
+  cancel-in-progress: false
+  queue: max
+
+jobs:
+  prepare-release:
+    name: Verify Attested Artifacts & Prepare Release Bundle
+    if: |
+      (
+        github.event_name == 'workflow_run' &&
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.event == 'push' &&
+        github.event.workflow_run.head_repository.full_name == github.repository &&
+        startsWith(github.event.workflow_run.head_branch, 'v')
+      ) || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
+      packages: read
+      attestations: read
+    outputs:
+      tag_name: ${{ steps.resolve.outputs.tag_name }}
+      target_sha: ${{ steps.resolve.outputs.target_sha }}
+      is_prerelease: ${{ steps.resolve.outputs.is_prerelease }}
+      make_latest: ${{ steps.resolve.outputs.make_latest }}
+      index_digest: ${{ steps.sboms.outputs.index_digest }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Resolve Release Tag, Verify Main Ancestry & Confirm Passing CI
+        id: resolve
+        timeout-minutes: 5
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          WORKFLOW_RUN_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          WORKFLOW_RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+          INPUT_TAG_NAME: ${{ inputs.tag_name }}
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_run" ]; then
+            TAG_NAME="${WORKFLOW_RUN_BRANCH}"
+          else
+            TAG_NAME="${INPUT_TAG_NAME}"
+          fi
+
+          SEMVER_TAG_PATTERN='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$'
+          if [[ ! "$TAG_NAME" =~ $SEMVER_TAG_PATTERN ]]; then
+            echo "::error::Invalid release version tag '${TAG_NAME}'. Expected Semantic Versioning tag starting with 'v' (e.g., v0.1.0 or v1.0.0-rc.1)."
+            exit 1
+          fi
+
+          GIT_AUTH_ARGS=()
+          ORIGIN_URL=$(git remote get-url origin 2>/dev/null || true)
+          if [ -n "${GH_TOKEN:-}" ] && [[ "$ORIGIN_URL" =~ ^https?://[^/]+ ]]; then
+            ORIGIN_SERVER="${BASH_REMATCH[0]}"
+            BASIC_TOKEN=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\r\n')
+            GIT_AUTH_ARGS=(-c "http.${ORIGIN_SERVER}/.extraheader=AUTHORIZATION: basic ${BASIC_TOKEN}")
+          fi
+
+          git "${GIT_AUTH_ARGS[@]}" fetch --no-tags origin \
+            +refs/heads/main:refs/remotes/origin/main \
+            "+refs/tags/${TAG_NAME}:refs/tags/${TAG_NAME}"
+
+          if ! TARGET_SHA=$(git rev-parse --verify "refs/tags/${TAG_NAME}^{commit}" 2>/dev/null); then
+            echo "::error::Release tag '${TAG_NAME}' does not resolve to a valid commit in origin."
+            exit 1
+          fi
+
+          if [ "$EVENT_NAME" = "workflow_run" ] && [ -n "${WORKFLOW_RUN_SHA:-}" ]; then
+            if [ "${TARGET_SHA,,}" != "${WORKFLOW_RUN_SHA,,}" ]; then
+              echo "::error::Tag '${TAG_NAME}' commit '${TARGET_SHA}' does not match Publish Release Artifact head_sha '${WORKFLOW_RUN_SHA}'."
+              exit 1
+            fi
+          fi
+
+          if ! git merge-base --is-ancestor "$TARGET_SHA" refs/remotes/origin/main; then
+            echo "::error::Tagged commit '${TARGET_SHA}' for '${TAG_NAME}' is not an ancestor of origin/main."
+            exit 1
+          fi
+
+          PASSING_CI_COUNT=$(gh api \
+            "repos/${REPO}/actions/workflows/ci.yml/runs?head_sha=${TARGET_SHA}&status=completed&per_page=50" \
+            --jq '[.workflow_runs[] | select(.conclusion == "success")] | length')
+          if [ "${PASSING_CI_COUNT:-0}" -lt 1 ]; then
+            echo "::error::No completed successful ci.yml workflow run found for tagged commit '${TARGET_SHA}'."
+            exit 1
+          fi
+
+          semver_lt() {
+            local lhs="${1%%+*}"
+            local rhs="${2%%+*}"
+            local l_maj l_min l_pat r_maj r_min r_pat
+            if [[ ! "$lhs" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+              return 1
+            fi
+            l_maj="${BASH_REMATCH[1]}"
+            l_min="${BASH_REMATCH[2]}"
+            l_pat="${BASH_REMATCH[3]}"
+            if [[ ! "$rhs" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+              return 1
+            fi
+            r_maj="${BASH_REMATCH[1]}"
+            r_min="${BASH_REMATCH[2]}"
+            r_pat="${BASH_REMATCH[3]}"
+            if (( 10#$l_maj != 10#$r_maj )); then
+              (( 10#$l_maj < 10#$r_maj ))
+              return $?
+            fi
+            if (( 10#$l_min != 10#$r_min )); then
+              (( 10#$l_min < 10#$r_min ))
+              return $?
+            fi
+            (( 10#$l_pat < 10#$r_pat ))
+            return $?
+          }
+
+          STABLE_SEMVER_PATTERN='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(\+[0-9A-Za-z.-]+)?$'
+          IS_PRERELEASE="false"
+          MAKE_LATEST="false"
+          if [[ "$TAG_NAME" == *-* ]]; then
+            IS_PRERELEASE="true"
+          elif [[ "$TAG_NAME" =~ $STABLE_SEMVER_PATTERN ]]; then
+            IS_HIGHEST_STABLE="true"
+            while IFS= read -r existing_tag; do
+              [ -z "$existing_tag" ] && continue
+              if [[ "$existing_tag" =~ $STABLE_SEMVER_PATTERN ]]; then
+                if semver_lt "$TAG_NAME" "$existing_tag"; then
+                  IS_HIGHEST_STABLE="false"
+                  break
+                fi
+              fi
+            done < <(git tag -l 'v*' 2>/dev/null || true)
+            if [ "$IS_HIGHEST_STABLE" = "true" ]; then
+              MAKE_LATEST="true"
+            fi
+          fi
+
+          git checkout --detach "$TARGET_SHA"
+
+          {
+            echo "tag_name=${TAG_NAME}"
+            echo "target_sha=${TARGET_SHA}"
+            echo "is_prerelease=${IS_PRERELEASE}"
+            echo "make_latest=${MAKE_LATEST}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Verify GHCR Provenance & Extract Release SPDX SBOMs
+        id: sboms
+        timeout-minutes: 5
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_ACTOR_LOGIN: ${{ github.actor }}
+          TAG_NAME: ${{ steps.resolve.outputs.tag_name }}
+          RESOLVED_SHA: ${{ steps.resolve.outputs.target_sha }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          REPO_OWNER: ${{ github.repository_owner }}
+          SIGNER_WORKFLOW: ${{ github.repository }}/.github/workflows/publish-artifact.yml
+          RELEASE_SBOM_DIR: /tmp/release-bundle/assets
+        run: |
+          rm -rf /tmp/release-bundle
+          mkdir -p /tmp/release-bundle/assets
+          bash scripts/ghcr-release-promotion.sh extract-release-sboms
+
+      - name: Build Track C Source Bundle, Compute SHA256SUMS & Extract Changelog Notes
+        env:
+          TAG_NAME: ${{ steps.resolve.outputs.tag_name }}
+          TARGET_SHA: ${{ steps.resolve.outputs.target_sha }}
+          INDEX_DIGEST: ${{ steps.sboms.outputs.index_digest }}
+          REPO: ${{ github.repository }}
+        run: |
+          ASSETS_DIR="/tmp/release-bundle/assets"
+          SOURCE_TARBALL="wedding-website-${TAG_NAME}.tar.gz"
+          git archive \
+            --format=tar.gz \
+            --prefix="wedding-website-${TAG_NAME#v}/" \
+            "$TARGET_SHA" > "${ASSETS_DIR}/${SOURCE_TARBALL}"
+
+          bash scripts/release-integrity.sh generate-sums \
+            --dir "$ASSETS_DIR" \
+            --output "${ASSETS_DIR}/SHA256SUMS" \
+            "sbom-amd64.spdx.json" \
+            "sbom-arm64.spdx.json" \
+            "sbom-index.spdx.json" \
+            "$SOURCE_TARBALL"
+          bash scripts/release-integrity.sh verify-sums \
+            --dir "$ASSETS_DIR" \
+            --manifest "${ASSETS_DIR}/SHA256SUMS" \
+            "sbom-amd64.spdx.json" \
+            "sbom-arm64.spdx.json" \
+            "sbom-index.spdx.json" \
+            "$SOURCE_TARBALL"
+
+          bash scripts/release-integrity.sh extract-changelog-notes \
+            CHANGELOG.md \
+            "$TAG_NAME" \
+            /tmp/release-bundle/release-notes.md
+
+          REPO_LOWER=$(printf '%s' "$REPO" | tr '[:upper:]' '[:lower:]')
+          {
+            echo ""
+            echo "### 🔐 Attested Release Artifacts & Verification"
+            echo "- **Multi-Platform Container Image**: \`ghcr.io/${REPO_LOWER}:${TAG_NAME}\` (\`ghcr.io/${REPO_LOWER}@${INDEX_DIGEST}\`)"
+            echo "- **Source Revision**: \`${TARGET_SHA}\`"
+            echo "- **Track C Host Archive**: \`${SOURCE_TARBALL}\` (verify via \`gh attestation verify\` and \`sha256sum --check --strict SHA256SUMS\`)"
+            echo "- **SPDX 2.3 SBOMs**: \`sbom-index.spdx.json\`, \`sbom-amd64.spdx.json\`, \`sbom-arm64.spdx.json\`"
+          } >> /tmp/release-bundle/release-notes.md
+
+      - name: Upload Prepared Release Bundle
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-bundle
+          path: /tmp/release-bundle/
+          if-no-files-found: error
+          retention-days: 1
+
+  publish-release:
+    name: Attest Release Bundle & Publish GitHub Release
+    needs: [prepare-release]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - name: Download Prepared Release Bundle
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-bundle
+          path: /tmp/release-bundle
+
+      - name: Verify SHA256SUMS & Release Assets Before Signing
+        env:
+          TAG_NAME: ${{ needs.prepare-release.outputs.tag_name }}
+        run: |
+          SEMVER_TAG_PATTERN='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$'
+          if [[ ! "$TAG_NAME" =~ $SEMVER_TAG_PATTERN ]]; then
+            echo "::error::Invalid release tag '${TAG_NAME}' in publish-release."
+            exit 1
+          fi
+
+          ASSETS_DIR="/tmp/release-bundle/assets"
+          NOTES_FILE="/tmp/release-bundle/release-notes.md"
+          SOURCE_TARBALL="wedding-website-${TAG_NAME}.tar.gz"
+          SUMS_FILE="${ASSETS_DIR}/SHA256SUMS"
+
+          if [ -n "$(find /tmp/release-bundle -type l -print -quit 2>/dev/null || true)" ]; then
+            echo "::error::Symbolic links are forbidden inside release-bundle."
+            exit 1
+          fi
+          if [ ! -s "$NOTES_FILE" ] || [ ! -s "$SUMS_FILE" ]; then
+            echo "::error::Missing or empty release-notes.md or SHA256SUMS in release-bundle."
+            exit 1
+          fi
+
+          while IFS= read -r line || [ -n "$line" ]; do
+            if [[ "$line" == *$'\r'* ]] || [[ ! "$line" =~ ^[a-f0-9]{64}\ \ ([^/].+)$ ]]; then
+              echo "::error::Malformed entry in SHA256SUMS."
+              exit 1
+            fi
+            entry_path="${BASH_REMATCH[1]}"
+            if [[ "$entry_path" == *".."* ]] || [[ "$entry_path" == *"/"* ]]; then
+              echo "::error::Unexpected path '${entry_path}' in SHA256SUMS."
+              exit 1
+            fi
+          done < "$SUMS_FILE"
+
+          EXPECTED_LIST=$(printf '%s\n' \
+            "sbom-amd64.spdx.json" \
+            "sbom-arm64.spdx.json" \
+            "sbom-index.spdx.json" \
+            "$SOURCE_TARBALL" | LC_ALL=C sort)
+          ACTUAL_LIST=$(sed 's/^[a-f0-9]\{64\}  //' "$SUMS_FILE" | LC_ALL=C sort)
+          if [ "$EXPECTED_LIST" != "$ACTUAL_LIST" ]; then
+            echo "::error::SHA256SUMS file list does not match expected release assets."
+            exit 1
+          fi
+
+          (
+            cd "$ASSETS_DIR"
+            sha256sum --check --strict SHA256SUMS
+          )
+
+          for sbom_name in sbom-index.spdx.json sbom-amd64.spdx.json sbom-arm64.spdx.json; do
+            jq -e '
+              type == "object" and
+              (.spdxVersion | type == "string" and length > 0) and
+              (.packages | type == "array" and length > 0)
+            ' "${ASSETS_DIR}/${sbom_name}" >/dev/null
+          done
+
+      - name: Attest SHA256SUMS, SPDX SBOMs & Track C Archive Provenance
+        timeout-minutes: 3
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            /tmp/release-bundle/assets/SHA256SUMS
+            /tmp/release-bundle/assets/sbom-index.spdx.json
+            /tmp/release-bundle/assets/sbom-amd64.spdx.json
+            /tmp/release-bundle/assets/sbom-arm64.spdx.json
+            /tmp/release-bundle/assets/wedding-website-${{ needs.prepare-release.outputs.tag_name }}.tar.gz
+
+      - name: Publish GitHub Release
+        timeout-minutes: 3
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TAG_NAME: ${{ needs.prepare-release.outputs.tag_name }}
+          TARGET_SHA: ${{ needs.prepare-release.outputs.target_sha }}
+          IS_PRERELEASE: ${{ needs.prepare-release.outputs.is_prerelease }}
+          MAKE_LATEST: ${{ needs.prepare-release.outputs.make_latest }}
+          INDEX_DIGEST: ${{ needs.prepare-release.outputs.index_digest }}
+        run: |
+          ASSETS_DIR="/tmp/release-bundle/assets"
+          NOTES_FILE="/tmp/release-bundle/release-notes.md"
+          SOURCE_TARBALL="wedding-website-${TAG_NAME}.tar.gz"
+
+          RELEASE_FLAGS=(
+            "--repo" "$REPO"
+            "--title" "$TAG_NAME"
+            "--notes-file" "$NOTES_FILE"
+          )
+          if [ "$IS_PRERELEASE" = "true" ]; then
+            RELEASE_FLAGS+=("--prerelease")
+          else
+            RELEASE_FLAGS+=("--latest=${MAKE_LATEST}")
+          fi
+
+          if gh release view "$TAG_NAME" --repo "$REPO" >/dev/null 2>&1; then
+            gh release upload "$TAG_NAME" \
+              --repo "$REPO" \
+              --clobber \
+              "${ASSETS_DIR}/SHA256SUMS" \
+              "${ASSETS_DIR}/sbom-index.spdx.json" \
+              "${ASSETS_DIR}/sbom-amd64.spdx.json" \
+              "${ASSETS_DIR}/sbom-arm64.spdx.json" \
+              "${ASSETS_DIR}/${SOURCE_TARBALL}"
+            gh release edit "$TAG_NAME" "${RELEASE_FLAGS[@]}"
+          else
+            gh release create "$TAG_NAME" \
+              --verify-tag \
+              "${RELEASE_FLAGS[@]}" \
+              "${ASSETS_DIR}/SHA256SUMS" \
+              "${ASSETS_DIR}/sbom-index.spdx.json" \
+              "${ASSETS_DIR}/sbom-amd64.spdx.json" \
+              "${ASSETS_DIR}/sbom-arm64.spdx.json" \
+              "${ASSETS_DIR}/${SOURCE_TARBALL}"
+          fi
+
+          {
+            echo "### 📦 GitHub Release Published"
+            echo "- **Release Tag:** \`${TAG_NAME}\`"
+            echo "- **Source Commit:** \`${TARGET_SHA}\`"
+            echo "- **GHCR Index Digest:** \`${INDEX_DIGEST}\`"
+            echo "- **Attested Assets:** \`SHA256SUMS\`, \`sbom-index.spdx.json\`, \`sbom-amd64.spdx.json\`, \`sbom-arm64.spdx.json\`, \`${SOURCE_TARBALL}\`"
+          } >> "$GITHUB_STEP_SUMMARY"

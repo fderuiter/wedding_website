@@ -273,14 +273,20 @@ describe('GET /api/admin/versions', () => {
     expect(itemData.features).toEqual(hiddenFeatures);
   });
 
-  it('masks contributor email addresses in Contributor and RegistryItem version history payloads', async () => {
+  it('masks contributor email addresses and personal identifiers when includeData=true is requested', async () => {
     mockIsAdminRequest.mockResolvedValue(true);
     const mockVersions = [
       {
         id: 'v-contrib',
         entityType: 'Contributor',
         entityId: 'c1',
-        data: { name: 'John Doe', email: 'john.doe@example.com', amount: 50 },
+        data: {
+          name: 'John Doe',
+          email: 'john.doe@example.com',
+          phone: '555-0100',
+          ssn: '123-45-6789',
+          amount: 50,
+        },
         createdAt: new Date(),
       },
       {
@@ -293,6 +299,7 @@ describe('GET /api/admin/versions', () => {
             {
               name: 'Jane Smith',
               email: 'jane.smith@example.com',
+              phoneNumber: '555-0199',
               amount: 100,
             },
           ],
@@ -305,9 +312,10 @@ describe('GET /api/admin/versions', () => {
       mockVersions,
     );
 
-    const req = new NextRequest('http://localhost/api/admin/versions', {
-      method: 'GET',
-    });
+    const req = new NextRequest(
+      'http://localhost/api/admin/versions?includeData=true',
+      { method: 'GET' },
+    );
     const res = await getVersions(req, {});
 
     expect(res.status).toBe(200);
@@ -317,10 +325,163 @@ describe('GET /api/admin/versions', () => {
     const contribData = json.data.items[0].data;
     expect(contribData.email).not.toBe('john.doe@example.com');
     expect(contribData.email).toContain('***');
+    expect(contribData.phone).toBe('[REDACTED]');
+    expect(contribData.ssn).toBe('[REDACTED]');
 
     const regData = json.data.items[1].data;
     expect(regData.contributors[0].email).not.toBe('jane.smith@example.com');
     expect(regData.contributors[0].email).toContain('***');
+    expect(regData.contributors[0].phoneNumber).toBe('[REDACTED]');
+  });
+
+  it('omits full entity blobs and returns deletion summary payloads on unfiltered timeline requests', async () => {
+    mockIsAdminRequest.mockResolvedValue(true);
+    const createdAt = new Date('2026-06-15T10:30:00.000Z');
+    (mockPrisma.snapshotVersion.count as jest.Mock).mockResolvedValue(2);
+    (mockPrisma.snapshotVersion.findMany as jest.Mock).mockResolvedValue([
+      {
+        id: 'v-updated',
+        entityType: 'AppConfig',
+        entityId: 'global',
+        author: 'Admin',
+        createdAt,
+        data: {
+          partner1Name: 'Casey',
+          smtpPass: 'secret-smtp-pass',
+          storyText: 'Large story payload '.repeat(100),
+        },
+      },
+      {
+        id: 'v-deleted',
+        entityType: 'ContentNode',
+        entityId: 'node-deleted',
+        author: 'Admin',
+        createdAt,
+        data: {
+          deleted: true,
+          previous: {
+            title: 'Old FAQ',
+            answer: 'Old answer payload '.repeat(100),
+          },
+        },
+      },
+    ]);
+
+    const req = new NextRequest(
+      'http://localhost/api/admin/versions?page=1&limit=50',
+      { method: 'GET' },
+    );
+    const res = await getVersions(req, {});
+
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.success).toBe(true);
+    expect(mockToPublicAppConfig).not.toHaveBeenCalled();
+    expect(json.data.items).toEqual([
+      {
+        id: 'v-updated',
+        entityType: 'AppConfig',
+        entityId: 'global',
+        author: 'Admin',
+        createdAt,
+        data: {},
+      },
+      {
+        id: 'v-deleted',
+        entityType: 'ContentNode',
+        entityId: 'node-deleted',
+        author: 'Admin',
+        createdAt,
+        data: { deleted: true },
+      },
+    ]);
+  });
+
+  it('allows omitting full snapshot payloads via includeData=false even when entityId is provided', async () => {
+    mockIsAdminRequest.mockResolvedValue(true);
+    (mockPrisma.snapshotVersion.count as jest.Mock).mockResolvedValue(1);
+    (mockPrisma.snapshotVersion.findMany as jest.Mock).mockResolvedValue([
+      {
+        id: 'v-entity-summary',
+        entityType: 'AppConfig',
+        entityId: 'global',
+        author: 'Admin',
+        createdAt: new Date('2026-06-15T10:30:00.000Z'),
+        data: {
+          partner1Name: 'Casey',
+          smtpPass: 'secret-smtp-pass',
+        },
+      },
+    ]);
+
+    const req = new NextRequest(
+      'http://localhost/api/admin/versions?entityType=AppConfig&entityId=global&includeData=false',
+      { method: 'GET' },
+    );
+    const res = await getVersions(req, {});
+
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(mockToPublicAppConfig).not.toHaveBeenCalled();
+    expect(json.data.items[0].data).toEqual({});
+  });
+
+  it('projects metadata and deletion status via $queryRaw without calling findMany when $queryRaw is available', async () => {
+    mockIsAdminRequest.mockResolvedValue(true);
+    const mockQueryRaw = jest.fn().mockResolvedValue([
+      {
+        id: 'v-sql-1',
+        entityType: 'RegistryItem',
+        entityId: 'reg-1',
+        author: 'Admin',
+        createdAt: '2026-06-18T14:00:00.000Z',
+        isDeleted: false,
+      },
+      {
+        id: 'v-sql-2',
+        entityType: 'InvitationCode',
+        entityId: 'inv-2',
+        author: 'Admin',
+        createdAt: new Date('2026-06-18T13:00:00.000Z'),
+        isDeleted: true,
+      },
+    ]);
+    (mockPrisma as unknown as { $queryRaw?: jest.Mock }).$queryRaw = mockQueryRaw;
+    (mockPrisma.snapshotVersion.count as jest.Mock).mockResolvedValue(2);
+
+    try {
+      const req = new NextRequest(
+        'http://localhost/api/admin/versions?page=1&limit=50',
+        { method: 'GET' },
+      );
+      const res = await getVersions(req, {});
+      expect(res.status).toBe(200);
+      const json = await res.json();
+
+      expect(mockQueryRaw).toHaveBeenCalledTimes(1);
+      expect(mockPrisma.snapshotVersion.findMany).not.toHaveBeenCalled();
+      expect(mockToPublicAppConfig).not.toHaveBeenCalled();
+      expect(json.data.items).toEqual([
+        {
+          id: 'v-sql-1',
+          entityType: 'RegistryItem',
+          entityId: 'reg-1',
+          author: 'Admin',
+          createdAt: new Date('2026-06-18T14:00:00.000Z'),
+          data: {},
+        },
+        {
+          id: 'v-sql-2',
+          entityType: 'InvitationCode',
+          entityId: 'inv-2',
+          author: 'Admin',
+          createdAt: new Date('2026-06-18T13:00:00.000Z'),
+          data: { deleted: true },
+        },
+      ]);
+    } finally {
+      delete (mockPrisma as unknown as { $queryRaw?: jest.Mock }).$queryRaw;
+    }
   });
 
   it('defaults to limit 50 and page 1 with take 50 and skip 0', async () => {

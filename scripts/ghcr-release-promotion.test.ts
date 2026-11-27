@@ -9,6 +9,7 @@ import path from 'path';
 const REPO_ROOT = process.cwd();
 const PROMOTION_SCRIPT = path.join(REPO_ROOT, 'scripts', 'ghcr-release-promotion.sh');
 const PERSIST_MOUNTS_SCRIPT = path.join(REPO_ROOT, 'scripts', 'persist-buildkit-mounts.sh');
+const INTEGRITY_SCRIPT = path.join(REPO_ROOT, 'scripts', 'release-integrity.sh');
 
 const TARGET_SHA = 'a'.repeat(40);
 const OTHER_SHA = 'b'.repeat(40);
@@ -291,8 +292,16 @@ describe('GHCR release promotion and BuildKit cache mount helpers', () => {
       path.join(REPO_ROOT, '.github', 'workflows', 'publish-artifact.yml'),
       'utf8'
     );
+    const releaseWorkflow = fs.readFileSync(
+      path.join(REPO_ROOT, '.github', 'workflows', 'release.yml'),
+      'utf8'
+    );
+    const storybookWorkflow = fs.readFileSync(
+      path.join(REPO_ROOT, '.github', 'workflows', 'storybook.yml'),
+      'utf8'
+    );
 
-    it('wires ci.yml and publish-artifact.yml steps to shared scripts with bounded timeouts', () => {
+    it('wires ci.yml, storybook.yml, publish-artifact.yml, and release.yml steps to shared scripts with bounded timeouts', () => {
       const ciPersistRefs =
         ciWorkflow.match(/run:\s*bash scripts\/persist-buildkit-mounts\.sh/g) ?? [];
       expect(ciPersistRefs).toHaveLength(2);
@@ -304,8 +313,23 @@ describe('GHCR release promotion and BuildKit cache mount helpers', () => {
       expect(publishWorkflow).toContain(
         'bash scripts/ghcr-release-promotion.sh mirror-promoted-digests'
       );
+      expect(publishWorkflow).toContain('bash scripts/release-integrity.sh generate-sums');
+      expect(publishWorkflow).toContain('bash scripts/release-integrity.sh verify-sums');
+      expect(publishWorkflow).toContain('bash scripts/release-integrity.sh verify-spdx');
       expect(publishWorkflow).toContain(
         "- name: Download Verified OCI Archive Artifacts\n        if: needs.preflight.outputs.promote_existing != 'true'"
+      );
+      expect(ciWorkflow).toContain('bash scripts/release-integrity.sh generate-tree-sums');
+      expect(ciWorkflow).toContain('bash scripts/release-integrity.sh verify-tree-sums');
+      expect(storybookWorkflow).toContain('bash scripts/release-integrity.sh generate-tree-sums');
+      expect(storybookWorkflow).toContain('bash scripts/release-integrity.sh verify-tree-sums');
+      expect(releaseWorkflow).toContain(
+        'bash scripts/ghcr-release-promotion.sh extract-release-sboms'
+      );
+      expect(releaseWorkflow).toContain('bash scripts/release-integrity.sh generate-sums');
+      expect(releaseWorkflow).toContain('bash scripts/release-integrity.sh verify-sums');
+      expect(releaseWorkflow).toContain(
+        'bash scripts/release-integrity.sh extract-changelog-notes'
       );
     });
   });
@@ -887,6 +911,267 @@ process.exit(0);
         });
         expect(fs.existsSync(path.join(mountCacheDir, 'deps', 'mounts.tar'))).toBe(true);
         expect(fs.existsSync(path.join(mountCacheDir, 'next', 'mounts.tar'))).toBe(true);
+      } finally {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+      }
+    });
+  });
+
+  describe('scripts/ghcr-release-promotion.sh extract-release-sboms & empty SPDX package guards', () => {
+    it('extracts index, amd64, and arm64 SPDX SBOMs for attested GHCR v* release tags and rejects empty .packages arrays', () => {
+      const harness = setupMockCliHarness(buildValidState());
+      const releaseSbomDir = path.join(harness.tmpDir, 'release-sboms');
+      try {
+        execFileSync('bash', [PROMOTION_SCRIPT, 'extract-release-sboms'], {
+          cwd: REPO_ROOT,
+          env: {
+            ...process.env,
+            PATH: `${harness.binDir}:${process.env.PATH ?? ''}`,
+            MOCK_STATE_FILE: harness.stateFile,
+            GITHUB_OUTPUT: harness.outputFile,
+            GH_TOKEN: 'ghs_test_token',
+            GITHUB_ACTOR_LOGIN: 'fderuiter',
+            TAG_NAME: 'v0.1.0',
+            RESOLVED_SHA: TARGET_SHA,
+            GITHUB_REPOSITORY: 'fderuiter/wedding_website',
+            REPO_OWNER: 'fderuiter',
+            SIGNER_WORKFLOW: 'fderuiter/wedding_website/.github/workflows/publish-artifact.yml',
+            RELEASE_SBOM_DIR: releaseSbomDir,
+          },
+          encoding: 'utf8',
+        });
+
+        expect(parseKeyValueFile(harness.outputFile)).toEqual({
+          index_digest: INDEX_DIGEST,
+          amd64_digest: AMD64_DIGEST,
+          arm64_digest: ARM64_DIGEST,
+        });
+        for (const label of ['index', 'amd64', 'arm64']) {
+          const sbom = JSON.parse(
+            fs.readFileSync(path.join(releaseSbomDir, `sbom-${label}.spdx.json`), 'utf8')
+          ) as { spdxVersion: string; packages: unknown[] };
+          expect(sbom.spdxVersion).toBe('SPDX-2.3');
+          expect(sbom.packages.length).toBeGreaterThan(0);
+        }
+      } finally {
+        harness.cleanup();
+      }
+
+      // Reject empty .packages: [] during both inspect-preflight and extract-release-sboms
+      const emptyPkgState = buildValidState();
+      const arm64Subject = `oci://ghcr.io/fderuiter/wedding_website@${ARM64_DIGEST}`;
+      emptyPkgState.spdxV23BySubject = {
+        ...emptyPkgState.spdxV23BySubject,
+        [arm64Subject]: [
+          {
+            verificationResult: {
+              signature: { certificate: { sourceRepositoryRef: 'refs/heads/main' } },
+              statement: {
+                predicate: {
+                  spdxVersion: 'SPDX-2.3',
+                  name: 'empty-arm64',
+                  packages: [],
+                },
+              },
+            },
+          },
+        ],
+      };
+      const emptyHarness = setupMockCliHarness(emptyPkgState);
+      try {
+        execFileSync('bash', [PROMOTION_SCRIPT, 'inspect-preflight'], {
+          cwd: REPO_ROOT,
+          env: {
+            ...process.env,
+            PATH: `${emptyHarness.binDir}:${process.env.PATH ?? ''}`,
+            MOCK_STATE_FILE: emptyHarness.stateFile,
+            GITHUB_OUTPUT: emptyHarness.outputFile,
+            EVENT_NAME: 'push',
+            RESOLVED_SHA: TARGET_SHA,
+            GITHUB_REPOSITORY: 'fderuiter/wedding_website',
+          },
+          encoding: 'utf8',
+        });
+        expect(parseKeyValueFile(emptyHarness.outputFile).promote_existing).toBe('false');
+
+        expect(() =>
+          execFileSync('bash', [PROMOTION_SCRIPT, 'extract-release-sboms'], {
+            cwd: REPO_ROOT,
+            env: {
+              ...process.env,
+              PATH: `${emptyHarness.binDir}:${process.env.PATH ?? ''}`,
+              MOCK_STATE_FILE: emptyHarness.stateFile,
+              TAG_NAME: 'v0.1.0',
+              RESOLVED_SHA: TARGET_SHA,
+              GITHUB_REPOSITORY: 'fderuiter/wedding_website',
+              RELEASE_SBOM_DIR: path.join(emptyHarness.tmpDir, 'bad-sboms'),
+            },
+            stdio: 'pipe',
+          })
+        ).toThrow();
+      } finally {
+        emptyHarness.cleanup();
+      }
+    });
+  });
+
+  describe('scripts/release-integrity.sh', () => {
+    it('validates SPDX non-empty .packages, explicit file SHA256SUMS, directory tree SHA256SUMS, and changelog release notes', () => {
+      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'release-integrity-test-'));
+      try {
+        // 1. verify-spdx rejects empty .packages and accepts populated SPDX JSON
+        const emptySpdx = path.join(tmpDir, 'empty.spdx.json');
+        const validSpdx = path.join(tmpDir, 'valid.spdx.json');
+        fs.writeFileSync(emptySpdx, JSON.stringify({ spdxVersion: 'SPDX-2.3', packages: [] }));
+        fs.writeFileSync(
+          validSpdx,
+          JSON.stringify({
+            spdxVersion: 'SPDX-2.3',
+            packages: [{ name: 'wedding_website', SPDXID: 'SPDXRef-App' }],
+          })
+        );
+
+        expect(() =>
+          execFileSync('bash', [INTEGRITY_SCRIPT, 'verify-spdx', emptySpdx], { stdio: 'pipe' })
+        ).toThrow();
+        execFileSync('bash', [INTEGRITY_SCRIPT, 'verify-spdx', validSpdx], { stdio: 'pipe' });
+
+        // 2. generate-sums & verify-sums detect modified or deleted files and path traversal
+        const handoffDir = path.join(tmpDir, 'handoff');
+        fs.mkdirSync(handoffDir, { recursive: true });
+        const archivePath = path.join(handoffDir, 'oci-amd64.tar.zst');
+        const sbomPath = path.join(handoffDir, 'sbom-amd64.spdx.json');
+        const sumsPath = path.join(handoffDir, 'sha256-amd64.sums');
+        fs.writeFileSync(archivePath, 'compressed-oci-bytes');
+        fs.copyFileSync(validSpdx, sbomPath);
+
+        execFileSync(
+          'bash',
+          [
+            INTEGRITY_SCRIPT,
+            'generate-sums',
+            '--dir',
+            handoffDir,
+            '--output',
+            sumsPath,
+            'oci-amd64.tar.zst',
+            'sbom-amd64.spdx.json',
+          ],
+          { stdio: 'pipe' }
+        );
+        execFileSync(
+          'bash',
+          [
+            INTEGRITY_SCRIPT,
+            'verify-sums',
+            '--dir',
+            handoffDir,
+            '--manifest',
+            sumsPath,
+            'oci-amd64.tar.zst',
+            'sbom-amd64.spdx.json',
+          ],
+          { stdio: 'pipe' }
+        );
+
+        // Tampering with oci-amd64.tar.zst fails verify-sums
+        fs.writeFileSync(archivePath, 'tampered-oci-bytes');
+        expect(() =>
+          execFileSync(
+            'bash',
+            [
+              INTEGRITY_SCRIPT,
+              'verify-sums',
+              '--dir',
+              handoffDir,
+              '--manifest',
+              sumsPath,
+              'oci-amd64.tar.zst',
+              'sbom-amd64.spdx.json',
+            ],
+            { stdio: 'pipe' }
+          )
+        ).toThrow();
+
+        // Traversal path in manifest fails verify-sums
+        expect(() =>
+          execFileSync(
+            'bash',
+            [
+              INTEGRITY_SCRIPT,
+              'generate-sums',
+              '--dir',
+              handoffDir,
+              '--output',
+              sumsPath,
+              '../valid.spdx.json',
+            ],
+            { stdio: 'pipe' }
+          )
+        ).toThrow();
+
+        // 3. generate-tree-sums & verify-tree-sums detect modified, deleted, or injected bundle files
+        const bundleDir = path.join(tmpDir, 'pages-bundle');
+        fs.mkdirSync(path.join(bundleDir, 'storybook'), { recursive: true });
+        fs.writeFileSync(path.join(bundleDir, '.nojekyll'), '');
+        fs.writeFileSync(path.join(bundleDir, 'index.html'), '<h1>Docs</h1>');
+        fs.writeFileSync(path.join(bundleDir, 'storybook', 'index.html'), '<h1>Storybook</h1>');
+
+        execFileSync('bash', [INTEGRITY_SCRIPT, 'generate-tree-sums', bundleDir], {
+          stdio: 'pipe',
+        });
+        execFileSync('bash', [INTEGRITY_SCRIPT, 'verify-tree-sums', bundleDir], {
+          stdio: 'pipe',
+        });
+
+        // Injecting an unindexed file fails verify-tree-sums
+        const rogueFile = path.join(bundleDir, 'rogue.js');
+        fs.writeFileSync(rogueFile, 'alert(1)');
+        expect(() =>
+          execFileSync('bash', [INTEGRITY_SCRIPT, 'verify-tree-sums', bundleDir], {
+            stdio: 'pipe',
+          })
+        ).toThrow();
+        fs.unlinkSync(rogueFile);
+
+        // Deleting .nojekyll fails verify-tree-sums (sha256sum --check --strict)
+        fs.unlinkSync(path.join(bundleDir, '.nojekyll'));
+        expect(() =>
+          execFileSync('bash', [INTEGRITY_SCRIPT, 'verify-tree-sums', bundleDir], {
+            stdio: 'pipe',
+          })
+        ).toThrow();
+
+        // 4. extract-changelog-notes reads matching version or falls back to [Unreleased]
+        const notes010 = path.join(tmpDir, 'notes-0.1.0.md');
+        const notesNext = path.join(tmpDir, 'notes-0.2.0.md');
+        execFileSync(
+          'bash',
+          [
+            INTEGRITY_SCRIPT,
+            'extract-changelog-notes',
+            path.join(REPO_ROOT, 'CHANGELOG.md'),
+            'v0.1.0',
+            notes010,
+          ],
+          { stdio: 'pipe' }
+        );
+        expect(fs.readFileSync(notes010, 'utf8')).toContain(
+          'Adopter Action Required**: Yes (Initial setup and database migration)'
+        );
+
+        execFileSync(
+          'bash',
+          [
+            INTEGRITY_SCRIPT,
+            'extract-changelog-notes',
+            path.join(REPO_ROOT, 'CHANGELOG.md'),
+            'v0.2.0',
+            notesNext,
+          ],
+          { stdio: 'pipe' }
+        );
+        expect(fs.readFileSync(notesNext, 'utf8')).toContain('Adopter Action Required');
       } finally {
         fs.rmSync(tmpDir, { recursive: true, force: true });
       }

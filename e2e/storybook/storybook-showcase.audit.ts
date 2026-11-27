@@ -171,27 +171,28 @@ async function waitForStorySettled(page: Page, theme: ColorTheme) {
 }
 
 async function navigateAndSettleStory(
-  page: Page,
+  initialPage: Page,
   targetUrl: string,
   theme: ColorTheme,
-  onBeforeRetry?: () => void
-) {
+  recoverPageForRetry: () => Promise<Page>
+): Promise<{ activePage: Page; docResponse: Awaited<ReturnType<Page['goto']>> }> {
+  let activePage = initialPage;
   let docResponse: Awaited<ReturnType<Page['goto']>> = null;
   try {
-    docResponse = await page.goto(targetUrl, {
+    docResponse = await activePage.goto(targetUrl, {
       waitUntil: 'load',
       timeout: 30_000,
     });
-    await waitForStorySettled(page, theme);
+    await waitForStorySettled(activePage, theme);
   } catch {
-    onBeforeRetry?.();
-    docResponse = await page.goto(targetUrl, {
+    activePage = await recoverPageForRetry();
+    docResponse = await activePage.goto(targetUrl, {
       waitUntil: 'load',
       timeout: 30_000,
     });
-    await waitForStorySettled(page, theme);
+    await waitForStorySettled(activePage, theme);
   }
-  return docResponse;
+  return { activePage, docResponse };
 }
 
 async function runWcagAudit(page: Page): Promise<AxeViolation[]> {
@@ -307,8 +308,6 @@ test.describe('Standalone Storybook Showcase Runtime & WCAG 2.2 AA Audit @a11y-s
         for (let idx = 0; idx < stories.length; idx += 1) {
           const story = stories[idx];
           const scanKey = `[${theme}] ${story.id}`;
-          await applyDeterministicTheme(page, theme);
-
           const failedResponses: string[] = [];
           const consoleErrors: string[] = [];
           const pageErrors: string[] = [];
@@ -327,12 +326,25 @@ test.describe('Standalone Storybook Showcase Runtime & WCAG 2.2 AA Audit @a11y-s
             pageErrors.push(err.message);
           };
 
-          page.on('response', onResponse);
-          page.on('console', onConsole);
-          page.on('pageerror', onPageError);
+          const attachListeners = (targetPage: Page) => {
+            targetPage.on('response', onResponse);
+            targetPage.on('console', onConsole);
+            targetPage.on('pageerror', onPageError);
+          };
+          const detachListeners = (targetPage: Page) => {
+            targetPage.off('response', onResponse);
+            targetPage.off('console', onConsole);
+            targetPage.off('pageerror', onPageError);
+          };
+
+          if (page.isClosed()) {
+            page = await createPrimedPage();
+          }
+          await applyDeterministicTheme(page, theme);
+          attachListeners(page);
 
           const isWebGlStory = story.id.startsWith('visual-graphical-heart3d--');
-          const shouldRecyclePage = isWebGlStory || (idx + 1) % 12 === 0;
+          const shouldRecyclePage = isWebGlStory || (idx + 1) % 8 === 0;
 
           try {
             const iframePrefix = basePath ? `${basePath}/iframe.html` : '/iframe.html';
@@ -342,23 +354,37 @@ test.describe('Standalone Storybook Showcase Runtime & WCAG 2.2 AA Audit @a11y-s
               consoleErrors.length = 0;
               pageErrors.length = 0;
             };
+            const recoverPageForRetry = async () => {
+              clearAttemptDiagnostics();
+              detachListeners(page);
+              await page.close().catch(() => {});
+              page = await createPrimedPage();
+              await applyDeterministicTheme(page, theme);
+              attachListeners(page);
+              return page;
+            };
 
-            let docResponse = await navigateAndSettleStory(
+            let navResult = await navigateAndSettleStory(
               page,
               targetUrl,
               theme,
-              clearAttemptDiagnostics
+              recoverPageForRetry
             );
-            if (pageErrors.some((msg) => msg.includes('Failed to load chunk'))) {
-              clearAttemptDiagnostics();
-              await page.goto('about:blank').catch(() => {});
-              await page.waitForTimeout(100);
-              docResponse = await navigateAndSettleStory(
+            page = navResult.activePage;
+            let docResponse = navResult.docResponse;
+            const hasTransientChunkLoadFailure = [...pageErrors, ...consoleErrors].some((msg) =>
+              /ChunkLoadError|Loading chunk \S+ failed|Failed to load chunk/i.test(msg)
+            );
+            if (hasTransientChunkLoadFailure) {
+              await recoverPageForRetry();
+              navResult = await navigateAndSettleStory(
                 page,
                 targetUrl,
                 theme,
-                clearAttemptDiagnostics
+                recoverPageForRetry
               );
+              page = navResult.activePage;
+              docResponse = navResult.docResponse;
             }
 
             const status = docResponse?.status() ?? 0;
@@ -394,13 +420,11 @@ test.describe('Standalone Storybook Showcase Runtime & WCAG 2.2 AA Audit @a11y-s
             }
             completedScans += 1;
           } finally {
-            page.off('response', onResponse);
-            page.off('console', onConsole);
-            page.off('pageerror', onPageError);
+            detachListeners(page);
           }
 
           if (idx < stories.length - 1 && shouldRecyclePage) {
-            await page.close();
+            await page.close().catch(() => {});
             page = await createPrimedPage();
           }
         }

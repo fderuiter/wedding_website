@@ -1074,6 +1074,7 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
     'src/app/api/uploads/[...path]/route.ts',
     'src/app/api/admin/maintenance/export/route.ts',
     'scripts/preflight-env.ts',
+    'scripts/release-integrity.sh',
     'scripts/verify-migration-compatibility.ts',
     'ARCHITECTURE.md',
     'CHANGELOG.md',
@@ -1093,6 +1094,7 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
     '.github/workflows/deploy.yml',
     '.github/workflows/deploy-provider.yml',
     '.github/workflows/publish-artifact.yml',
+    '.github/workflows/release.yml',
     '.github/workflows/db-migrate.yml',
     '.github/workflows/rollback.yml',
   ];
@@ -2852,6 +2854,7 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
     'static-export-build',
     'storybook-build',
     'pages-verify',
+    'attest-bundles',
     'prepare-docs',
     'deploy-docs',
   ]) {
@@ -3029,6 +3032,34 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
     ) {
       errors.push(
         '.github/workflows/storybook.yml: `actions/cache` `key` and `restore-keys` must include `steps.base-path.outputs.storybook_base` and lockfile/.storybook hash'
+      );
+    }
+  }
+
+  // 4b-ii. Verify release.yml, SHA256SUMS, and scripts/release-integrity.sh workflow & runbook contracts
+  const releaseWorkflowRaw = fs.readFileSync(path.join(workflowsDir, 'release.yml'), 'utf8');
+  if (
+    !releaseWorkflowRaw.includes('prepare-release:') ||
+    !releaseWorkflowRaw.includes('publish-release:') ||
+    !releaseWorkflowRaw.includes('scripts/release-integrity.sh') ||
+    !releaseWorkflowRaw.includes('SHA256SUMS') ||
+    !releaseWorkflowRaw.includes('gh release create')
+  ) {
+    errors.push(
+      '.github/workflows/release.yml: Must define `prepare-release` and `publish-release` jobs delegating `SHA256SUMS` checks to `scripts/release-integrity.sh` and publishing via `gh release create`'
+    );
+  }
+  for (const requiredReleaseDocToken of [
+    'release.yml',
+    'prepare-release',
+    'publish-release',
+    'attest-storybook',
+    'scripts/release-integrity.sh',
+    'SHA256SUMS',
+  ]) {
+    if (!deploymentMd.includes(requiredReleaseDocToken)) {
+      errors.push(
+        `DEPLOYMENT.md: Missing release integrity / workflow reference "${requiredReleaseDocToken}"`
       );
     }
   }
@@ -3785,6 +3816,20 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
   if (!upgradingMd.includes('npm run migrate:deploy') || !upgradingMd.includes('npm ci')) {
     errors.push(
       'docs/upgrading.md: Host Node.js upgrade track must document `npm ci` and `npm run migrate:deploy` (Remediation: Update Track C in docs/upgrading.md)'
+    );
+  }
+  if (
+    !upgradingMd.includes('SHA256SUMS') ||
+    !upgradingMd.includes('gh attestation verify') ||
+    !upgradingMd.includes('sha256sum --check --strict')
+  ) {
+    errors.push(
+      'docs/upgrading.md: Host Node.js upgrade track (Track C) must document `gh attestation verify` and `sha256sum --check --strict SHA256SUMS` release verification (Remediation: Update Track C in docs/upgrading.md)'
+    );
+  }
+  if (!versioningMd.includes('release.yml') || !versioningMd.includes('SHA256SUMS')) {
+    errors.push(
+      'docs/versioning.md: Must document automated GitHub Release publication via `.github/workflows/release.yml` and attested `SHA256SUMS` manifests (Remediation: Update Section 2 in docs/versioning.md)'
     );
   }
 
