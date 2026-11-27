@@ -193,6 +193,59 @@ describe('HistoryTimelinePage SegmentedTabs accessibility', () => {
     expect(mockUseAdminBroadcast).toHaveBeenLastCalledWith({ fetchHistory: true });
   });
 
+  it('renders Created/Updated and Deleted badges from scoped summary payloads and triggers version restore', async () => {
+    const mockPost = apiClient.post as jest.MockedFunction<typeof apiClient.post>;
+    mockPost.mockResolvedValueOnce({ success: true });
+    mockGet.mockResolvedValueOnce({
+      items: [
+        {
+          id: 'ver-summary-live',
+          entityType: 'AppConfig',
+          entityId: 'global',
+          author: 'Admin',
+          createdAt: '2026-06-05T10:00:00.000Z',
+          data: {},
+        },
+        {
+          id: 'ver-summary-deleted',
+          entityType: 'RegistryItem',
+          entityId: 'reg-deleted-1',
+          author: 'Admin',
+          createdAt: '2026-06-04T09:30:00.000Z',
+          data: { deleted: true },
+        },
+      ],
+      pagination: {
+        total: 2,
+        page: 1,
+        limit: 50,
+        totalPages: 1,
+      },
+    });
+
+    const { container } = render(<HistoryTimelinePage />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Created/Updated')).toBeInTheDocument();
+      expect(screen.getByText('Deleted')).toBeInTheDocument();
+    });
+
+    expect(mockGet).toHaveBeenCalledWith('/api/admin/versions?page=1&limit=50');
+    expect(await axe(container)).toHaveNoViolations();
+
+    const restoreButtons = screen.getAllByRole('button', { name: 'Restore' });
+    expect(restoreButtons).toHaveLength(2);
+
+    mockGet.mockResolvedValueOnce({ items: [], pagination: { total: 0, page: 1, limit: 50, totalPages: 0 } });
+    fireEvent.click(restoreButtons[1]);
+
+    await waitFor(() => {
+      expect(mockPost).toHaveBeenCalledWith('/api/admin/versions/ver-summary-deleted/restore');
+      expect(mockGet).toHaveBeenCalledTimes(2);
+      expect(screen.getByText('No history found.')).toBeInTheDocument();
+    });
+  });
+
   it('lazily fetches GET /api/admin/broadcast/[id] on Details click, shows loading state, renders recipients and errors, and refreshes after retry', async () => {
     window.history.pushState({}, '', '/admin/dashboard/history?tab=broadcasts');
 

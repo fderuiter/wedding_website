@@ -54,6 +54,11 @@ import {
 } from '../dtoMappers';
 import { splitMemberFullName } from '@/utils/invitationValidation';
 import {
+  sanitizeDemoVersionData,
+  shouldIncludeSnapshotData,
+  toSnapshotSummaryData,
+} from '@/utils/versionSnapshots';
+import {
   buildBackupExportPayload,
   buildInvitationCodesCsv,
   buildSeatingCsv,
@@ -100,38 +105,6 @@ function formatThankYouEmailHtml(text: string): string {
     )
     .join('');
   return `<div style="font-family:Georgia,serif;color:#1f2937;line-height:1.6;">${paragraphs}</div>`;
-}
-
-function maskEmail(email: string): string {
-  if (!email.includes('@')) return '[REDACTED]';
-  const [local, domain] = email.split('@');
-  if (!local) return '[REDACTED]';
-  if (local.length <= 2) return `${local[0] || ''}***@${domain}`;
-  return `${local[0]}***${local[local.length - 1]}@${domain}`;
-}
-
-function sanitizeVersionData(value: unknown): unknown {
-  if (!value || typeof value !== 'object') return value;
-  if (Array.isArray(value)) return value.map(sanitizeVersionData);
-  const record = value as Record<string, unknown>;
-  const out: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(record)) {
-    const lk = k.toLowerCase();
-    if (lk.includes('email') && typeof v === 'string' && v.length > 0) {
-      out[k] = maskEmail(v);
-    } else if (
-      (lk === 'phone' || lk === 'phonenumber' || lk === 'shippingphone') &&
-      typeof v === 'string' &&
-      v.length > 0
-    ) {
-      out[k] = '[REDACTED]';
-    } else if (v && typeof v === 'object') {
-      out[k] = sanitizeVersionData(v);
-    } else {
-      out[k] = v;
-    }
-  }
-  return out;
 }
 
 function computeSampleDataCounts(snapshot: StaticDemoSnapshot) {
@@ -4169,6 +4142,10 @@ export async function handleAdminWorkflowRoutes(
     const snapshot = store.getSnapshot();
     const entityType = searchParams.get('entityType')?.trim() || '';
     const entityId = searchParams.get('entityId')?.trim() || '';
+    const includeData = shouldIncludeSnapshotData(
+      searchParams.get('includeData'),
+      entityId,
+    );
     const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10) || 1);
     const limit = Math.min(
       100,
@@ -4187,7 +4164,9 @@ export async function handleAdminWorkflowRoutes(
       .slice((page - 1) * limit, page * limit)
       .map((v) => ({
         ...v,
-        data: sanitizeVersionData(v.data),
+        data: includeData
+          ? sanitizeDemoVersionData(v.data, v.entityType)
+          : toSnapshotSummaryData(v.data),
       }));
 
     return wrapMiddlewareJson({
