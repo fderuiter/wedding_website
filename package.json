@@ -250,11 +250,11 @@
     "webpack-dev-middleware": "^7.4.6"
   },
   "lint-staged": {
-    "*.{js,jsx,ts,tsx,mjs,cjs,mts,cts}": "eslint --cache --cache-location .eslintcache --cache-strategy content --no-warn-ignored --fix --max-warnings=0",
-    ".githooks/*": "eslint --cache --cache-location .eslintcache --cache-strategy content --no-warn-ignored --fix --max-warnings=0",
+    "*.{js,jsx,ts,tsx,mjs,cjs,mts,cts}": "eslint --cache --cache-location .eslintcache --cache-strategy content --no-warn-ignored --no-error-on-unmatched-pattern --fix --max-warnings=0",
+    ".githooks/*": "eslint --cache --cache-location .eslintcache --cache-strategy content --no-warn-ignored --no-error-on-unmatched-pattern --fix --max-warnings=0",
     ".github/workflows/*.{yml,yaml}": "npm run check:action-pins",
     "prisma/migrations/**/*.sql": "npm run lint:migrations",
-    "{Dockerfile,.dockerignore,docker-entrypoint.sh,docker-compose*.yml,docker/**}": "npm run check:standalone -- --static-only",
+    "{Dockerfile,.dockerignore,docker-entrypoint.sh,docker-compose*.yml,docker/**,package.json,package-lock.json}": "npm run check:standalone -- --static-only",
     "*.md": "npm run check:links"
   }
 }

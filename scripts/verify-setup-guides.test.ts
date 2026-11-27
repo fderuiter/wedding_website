@@ -775,6 +775,39 @@ describe('verify-setup-guides contract check', () => {
     expect(verifySetupGuides(tempDir)).toEqual([]);
   });
 
+  it('rejects bare npx lint-staged calls omitting --no-stash/--no-revert, missing pre-commit snapshot isolation, and missing manifest routing', () => {
+    fs.writeFileSync(
+      path.join(tempDir, '.githooks/pre-commit'),
+      [
+        '#!/usr/bin/env node',
+        "import { spawnSync } from 'child_process';",
+        "const res = spawnSync('npx', ['lint-staged'], { stdio: 'inherit', shell: true });",
+        'process.exit(res.status ?? 1);',
+        '',
+      ].join('\n'),
+      'utf8'
+    );
+
+    const pkgPath = path.join(tempDir, 'package.json');
+    fs.writeFileSync(
+      pkgPath,
+      fs
+        .readFileSync(pkgPath, 'utf8')
+        .replace(',package.json,package-lock.json}', '}'),
+      'utf8'
+    );
+
+    const errors = verifySetupGuides(tempDir);
+    expect(errors).toEqual(
+      expect.arrayContaining([
+        '.githooks/pre-commit: Must not invoke destructive workspace command "npx lint-staged (without --no-stash and --no-revert)"',
+        '.githooks/pre-commit: Must invoke "npx lint-staged" with "--no-stash", "--no-revert", "--no-hide-partially-staged", and "--diff=--staged"',
+        '.githooks/pre-commit: Must materialize the staged Git index ("git write-tree") into an ephemeral snapshot hydrated via "scripts/quality/worktree-cache.mjs"',
+        'package.json: "lint-staged" must route staged "package.json" and "package-lock.json" edits to "check:standalone -- --static-only"',
+      ])
+    );
+  });
+
   it('rejects utimesSync/tsc -b typecheck scripts, --untracked-files=no pre-push regression, duplicate tsBuildInfoFile paths, missing --skip-generate, and stale tsc -b docs', () => {
     const pkgPath = path.join(tempDir, 'package.json');
     fs.writeFileSync(
