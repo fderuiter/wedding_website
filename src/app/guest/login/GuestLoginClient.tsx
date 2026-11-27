@@ -9,6 +9,7 @@ import { Icon } from '@/components/ui/Icon';
 import { motion, Variants } from 'framer-motion';
 import { useTheme } from '@/components/ThemeProvider';
 import { Overlay } from '@/components/ui/Overlay';
+import { GuestSignInLinkRecovery } from '@/components/guest/GuestSignInLinkRecovery';
 import { useGuestLoginMachine } from '@/hooks/useGuestLoginMachine';
 import { withBasePath } from '@/lib/basePath';
 
@@ -40,7 +41,7 @@ function getSafeMailtoUrl(email: string | null | undefined): string | null {
 }
 
 function GuestLoginForm() {
-  const { contactEmail } = useTheme();
+  const { contactEmail, isMessagingActive } = useTheme();
   const {
     passcode,
     showPasscode,
@@ -226,29 +227,33 @@ function GuestLoginForm() {
             </ul>
           </div>
 
-          <div className="bg-gray-50 dark:bg-gray-700/50 p-4 rounded-2xl border border-gray-100 dark:border-gray-700 space-y-2">
-            <p className="text-xs sm:text-sm font-semibold text-gray-800 dark:text-gray-200">
-              Still can&apos;t find your code?
-            </p>
-            {mailtoUrl ? (
-              <>
-                <p className="text-xs text-gray-600 dark:text-gray-300">
-                  Send a quick email to the hosts and they can share your code with you.
-                </p>
-                <a
-                  href={mailtoUrl}
-                  className="inline-flex items-center justify-center gap-2 w-full mt-2 px-4 py-2.5 bg-primary text-white text-sm font-semibold rounded-xl shadow-md hover:opacity-90 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
-                >
-                  <Icon name="Mail" className="w-4 h-4" />
-                  <span>Contact Host</span>
-                </a>
-              </>
-            ) : (
-              <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-300">
-                Please message the hosts directly by text or phone so they can share your code with you.
+          {isMessagingActive ? (
+            <GuestSignInLinkRecovery headingLevel="h3" />
+          ) : (
+            <div className="bg-gray-50 dark:bg-gray-700/50 p-4 rounded-2xl border border-gray-100 dark:border-gray-700 space-y-2">
+              <p className="text-xs sm:text-sm font-semibold text-gray-800 dark:text-gray-200">
+                Still can&apos;t find your code?
               </p>
-            )}
-          </div>
+              {mailtoUrl ? (
+                <>
+                  <p className="text-xs text-gray-600 dark:text-gray-300">
+                    Send a quick email to the hosts and they can share your code with you.
+                  </p>
+                  <a
+                    href={mailtoUrl}
+                    className="inline-flex items-center justify-center gap-2 w-full mt-2 px-4 py-2.5 bg-primary text-white text-sm font-semibold rounded-xl shadow-md hover:opacity-90 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+                  >
+                    <Icon name="Mail" className="w-4 h-4" />
+                    <span>Contact Host</span>
+                  </a>
+                </>
+              ) : (
+                <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-300">
+                  Please message the hosts directly by text or phone so they can share your code with you.
+                </p>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="pt-1 flex justify-end">

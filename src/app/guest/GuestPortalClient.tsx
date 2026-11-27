@@ -13,6 +13,7 @@ import {
   getSafeHostEmailLink,
   getSafeHostPhoneLink,
 } from '@/components/guest/GuestHelpModal';
+import { GuestSignInLinkRecovery } from '@/components/guest/GuestSignInLinkRecovery';
 import { HouseholdPartyRosterCard } from '@/components/guest/HouseholdPartyRosterCard';
 import { useTheme } from '@/components/ThemeProvider';
 import { useGuestAddressPortal } from '@/hooks/useGuestAddressPortal';
@@ -173,6 +174,12 @@ export default function GuestAddressPage() {
             {isValidating ? 'Verifying Code...' : 'Access Guest Portal'}
           </Button>
         </form>
+
+        {theme.isMessagingActive && (
+          <div className="pt-2 border-t border-gray-100 dark:border-zinc-700 space-y-4">
+            <GuestSignInLinkRecovery headingLevel="h2" />
+          </div>
+        )}
       </div>
     );
 

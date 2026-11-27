@@ -2,6 +2,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { axe, toHaveNoViolations } from 'jest-axe';
 import GuestAddressPage from '../page';
+import { ThemeProvider } from '@/components/ThemeProvider';
 
 expect.extend(toHaveNoViolations);
 
@@ -1039,6 +1040,57 @@ describe('GuestAddressPage (/guest)', () => {
     expect(document.activeElement).not.toBe(document.body);
     const retrySaveBtn = screen.getByRole('button', { name: /Retry Save/i });
     expect(retrySaveBtn).not.toBeDisabled();
+    expect(await axe(container)).toHaveNoViolations();
+  });
+
+  it('displays self-service sign-in link recovery on /guest code-entry card only when isMessagingActive is true', async () => {
+    globalFetch.mockImplementation(async (input: unknown) => {
+      const url = typeof input === 'string' ? input : String((input as { url?: string })?.url ?? '');
+      if (url.includes('/api/guest/recover')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            success: true,
+            message:
+              "If your details match an invited household with saved contact information, we've sent a personal one-click sign-in link.",
+          }),
+        };
+      }
+      return {
+        ok: false,
+        status: 401,
+        json: async () => ({ success: false, error: 'Unauthorized' }),
+      };
+    });
+
+    // When isMessagingActive is false (default), recovery form is hidden
+    const { unmount } = render(<GuestAddressPage />);
+    expect(await screen.findByLabelText('Invitation Code')).toBeInTheDocument();
+    expect(screen.queryByTestId('guest-signin-link-recovery')).not.toBeInTheDocument();
+    unmount();
+
+    // When isMessagingActive is true, recovery form renders inside code-entry card and passes axe
+    const { container } = render(
+      <ThemeProvider config={{ isMessagingActive: true }}>
+        <GuestAddressPage />
+      </ThemeProvider>
+    );
+
+    expect(await screen.findByLabelText('Invitation Code')).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { level: 2, name: /Email or Text Me My Sign-In Link/i })
+    ).toBeInTheDocument();
+    expect(await axe(container)).toHaveNoViolations();
+
+    fireEvent.change(screen.getByLabelText(/Email Address or Full Guest Name/i), {
+      target: { value: 'Marianne Dashwood' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Send Sign-In Link/i }));
+
+    expect(await screen.findByTestId('guest-recovery-confirmation')).toHaveTextContent(
+      /personal one-click sign-in link/i
+    );
     expect(await axe(container)).toHaveNoViolations();
   });
 });

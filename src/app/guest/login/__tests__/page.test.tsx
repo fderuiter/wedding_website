@@ -516,4 +516,75 @@ describe('Guest Login Page with Unified Sign-In and Help Drawer', () => {
     });
     expect(screen.queryByTestId('back-to-wedding-photos-link')).not.toBeInTheDocument();
   });
+
+  it('renders self-service sign-in link recovery form inside #guest-help-drawer when isMessagingActive is true and passes axe checks', async () => {
+    const fetchMock = jest
+      .fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>()
+      .mockImplementation(async (input) => {
+        const url = typeof input === 'string' ? input : input.toString();
+        if (url.includes('/api/guest/recover')) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              success: true,
+              message:
+                "If your details match an invited household with saved contact information, we've sent a personal one-click sign-in link.",
+            }),
+          } as unknown as Response;
+        }
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            success: true,
+            data: {
+              status: 'none',
+              isVerified: false,
+              invitationCode: null,
+              code: null,
+              guestName: null,
+              hasPasscodeSession: false,
+            },
+          }),
+        } as unknown as Response;
+      });
+    globalWithFetch.fetch = fetchMock;
+
+    const { container } = render(
+      <ThemeProvider
+        config={{
+          isMessagingActive: true,
+          contactEmail: 'hosts@ourwedding.com',
+        }}
+      >
+        <GuestLoginPage />
+      </ThemeProvider>
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /need help finding your code\?/i }));
+
+    expect(
+      screen.getByRole('heading', { level: 3, name: /email or text me my sign-in link/i })
+    ).toBeInTheDocument();
+    expect(await axe(container)).toHaveNoViolations();
+
+    const recoveryInput = screen.getByLabelText(/email address or full guest name/i);
+    const sendBtn = screen.getByRole('button', { name: /send sign-in link/i });
+
+    // Rejects single-word surname client-side before network call
+    fireEvent.change(recoveryInput, { target: { value: 'Vance' } });
+    fireEvent.click(sendBtn);
+    expect(await screen.findByText(/first and last name/i)).toBeInTheDocument();
+
+    // Submits full name or email and displays generic confirmation without redirecting
+    fireEvent.change(recoveryInput, { target: { value: 'eleanor.vance@example.org' } });
+    fireEvent.click(sendBtn);
+
+    const confirmation = await screen.findByTestId('guest-recovery-confirmation');
+    expect(confirmation).toHaveAttribute('role', 'status');
+    expect(confirmation).toHaveTextContent(/personal one-click sign-in link/i);
+    expect(mockPush).not.toHaveBeenCalled();
+    expect(await axe(container)).toHaveNoViolations();
+  });
 });

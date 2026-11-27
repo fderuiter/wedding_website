@@ -145,6 +145,22 @@ export const GuestLookupSchema = z.object({
   ],
 });
 
+export const GuestSignInRecoverySchema = z
+  .object({
+    identifier: z.string().trim().max(255, 'Input must be at most 255 characters.').optional(),
+    query: z.string().trim().max(255, 'Input must be at most 255 characters.').optional(),
+    name: z.string().trim().max(255, 'Input must be at most 255 characters.').optional(),
+    email: z.string().trim().max(255, 'Input must be at most 255 characters.').optional(),
+    website: z.string().max(255).optional(),
+    honeypot: z.string().max(255).optional(),
+    hp_field: z.string().max(255).optional(),
+    confirm_email: z.string().max(255).optional(),
+  })
+  .meta({
+    description:
+      'Public guest sign-in link recovery request payload accepting an email address or full first and last name plus optional honeypot fields.',
+  });
+
 const SingleGuestPhotoSchema = z.any()
   .refine((val) => val !== null && val !== undefined, { message: 'No file provided' })
   .refine((file) => typeof file === 'object' && typeof file?.size === 'number' && file?.size <= MAX_GUEST_PHOTO_SIZE, { message: 'File size exceeds 10MB limit' })
