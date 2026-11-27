@@ -450,7 +450,7 @@ export const ToastProvider = ({
       if (!hasVisibleToasts) return;
 
       const container = containerRef.current;
-      if (!container) return;
+      if (!container || container.hasAttribute('inert')) return;
 
       const activeEl =
         document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -480,6 +480,8 @@ export const ToastProvider = ({
     };
   }, [hasVisibleToasts, restorePriorFocus]);
 
+  const hasConfirmToasts = toasts.some((t) => t.type === 'confirm');
+
   return (
     <ToastContext.Provider value={{ toasts, addToast, removeToast, confirm }}>
       {children}
@@ -489,6 +491,7 @@ export const ToastProvider = ({
           isOpen={true}
           onClose={() => toast.onCancel?.()}
           role="alertdialog"
+          layoutClassName="fixed inset-0 z-[70] flex items-center justify-center p-4"
           title="Confirm Action"
           description={toast.message}
         >
@@ -511,6 +514,7 @@ export const ToastProvider = ({
       <div
         ref={containerRef}
         data-toast-container
+        inert={hasConfirmToasts || undefined}
         role={shouldExposeLandmark ? 'region' : undefined}
         aria-label={shouldExposeLandmark ? landmarkLabel : undefined}
         className="fixed top-4 right-4 z-[60] flex flex-col items-end gap-2 pointer-events-none"

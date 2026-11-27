@@ -181,6 +181,7 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
     expect(docDriftCommentBlock).not.toContain('actions/checkout');
     expect(docDriftCommentBlock).not.toContain('npm ci');
     expect(ciJobs['prepare-docs']?.needs).toEqual([
+      'verify',
       'ci-complete',
       'static-export-build',
       'storybook-build',

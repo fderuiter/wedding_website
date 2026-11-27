@@ -711,4 +711,48 @@ describe('Navbar Component - Active aria-current Accessibility & Theme Tokens', 
       global.fetch = originalFetch;
     }
   });
+
+  it('omits closed aria-controls, closes Event Guide on Tab advancing focus sequentially, and marks header inert while #mobile-menu is open', async () => {
+    render(
+      <Navbar
+        isAdmin={true}
+        handleLogout={jest.fn()}
+        headerRef={headerRef}
+        config={mockConfig}
+      />
+    );
+
+    const guideTrigger = screen.getByRole('button', { name: /event guide/i });
+    const mobileToggle = screen.getByRole('button', { name: /open main menu/i });
+    const headerEl = screen.getByRole('banner', { name: /site header/i });
+
+    expect(guideTrigger).not.toHaveAttribute('aria-controls');
+    expect(mobileToggle).not.toHaveAttribute('aria-controls');
+    expect(headerEl).not.toHaveAttribute('inert');
+
+    // Open Event Guide and press Tab -> closes menu and moves focus sequentially to next nav link
+    fireEvent.click(guideTrigger);
+    expect(guideTrigger).toHaveAttribute('aria-controls', 'desktop-guide-menu');
+    const menu = screen.getByRole('menu');
+    const firstMenuItem = within(menu).getAllByRole('menuitem')[0];
+    expect(firstMenuItem).toHaveFocus();
+
+    fireEvent.keyDown(firstMenuItem, { key: 'Tab' });
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    expect(guideTrigger).not.toHaveAttribute('aria-controls');
+    expect(document.activeElement).not.toBe(guideTrigger);
+    expect(headerEl.contains(document.activeElement)).toBe(true);
+
+    // Open mobile menu -> sets aria-controls on toggle and marks header inert
+    fireEvent.click(mobileToggle);
+    expect(mobileToggle).toHaveAttribute('aria-controls', 'mobile-menu');
+    expect(headerEl).toHaveAttribute('inert');
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', { name: 'Mobile navigation menu' })).not.toBeInTheDocument();
+    });
+    expect(headerEl).not.toHaveAttribute('inert');
+    expect(mobileToggle).not.toHaveAttribute('aria-controls');
+  });
 });

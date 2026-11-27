@@ -2,6 +2,7 @@
 
 import React, { createContext, useCallback, useContext, useId, useRef } from 'react';
 import { Overlay } from './Overlay';
+import { Icon } from './Icon';
 import { Heading, type HeadingLevel } from './Layout';
 import { EnsureToastProvider, ToastContext, type ToastContextValue } from './ToastProvider';
 import { cn } from '@/utils/cn';
@@ -56,8 +57,10 @@ export interface DialogProps {
   'aria-labelledby'?: string;
   'aria-describedby'?: string;
   className?: string;
+  layoutClassName?: string;
   contentClassName?: string;
   scrollRegion?: boolean;
+  showCloseButton?: boolean;
   style?: React.CSSProperties;
   isDirty?: boolean;
   confirmDiscardMessage?: string;
@@ -75,8 +78,10 @@ function DialogInner({
   'aria-labelledby': ariaLabelledby,
   'aria-describedby': ariaDescribedby,
   className,
+  layoutClassName,
   contentClassName,
   scrollRegion = true,
+  showCloseButton = false,
   style,
   isDirty = false,
   confirmDiscardMessage = DEFAULT_CONFIRM_DISCARD_MESSAGE,
@@ -93,14 +98,18 @@ function DialogInner({
       ref={ref}
       isOpen={isOpen}
       onClose={handleRequestClose}
+      modal
+      allowToastInteraction={role !== 'alertdialog'}
+      layoutClassName={layoutClassName}
       className={cn(
-        'bg-white dark:bg-zinc-900 rounded-lg shadow-[var(--shadow-overlay)] w-full max-w-md max-h-[calc(100vh-2rem)] print:max-h-none print:overflow-visible overflow-hidden text-gray-900 dark:text-zinc-50 border',
+        'bg-white dark:bg-zinc-900 rounded-lg shadow-[var(--shadow-overlay)] w-full max-w-md max-h-[calc(100vh-2rem)] flex flex-col print:max-h-none print:overflow-visible overflow-hidden text-gray-900 dark:text-zinc-50 border',
         className
       )}
       style={{
         backgroundColor: 'var(--dialog-bg, var(--background, #ffffff))',
         borderRadius: 'var(--dialog-border-radius, 0.5rem)',
-        boxShadow: 'var(--dialog-shadow, var(--shadow-overlay, 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)))',
+        boxShadow:
+          'var(--dialog-shadow, var(--shadow-overlay, 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)))',
         borderColor: 'var(--dialog-border-color, var(--color-border, #e5e7eb))',
         ...style,
       }}
@@ -110,11 +119,14 @@ function DialogInner({
         aria-modal="true"
         aria-labelledby={finalLabelId}
         aria-describedby={finalDescId}
-        className="w-full max-h-[calc(100vh-2rem)] flex flex-col print:max-h-none"
+        className="w-full min-h-0 flex-1 flex flex-col print:max-h-none"
       >
         {title && (
           <div
-            className="shrink-0 px-6 py-4 border-b border-[var(--dialog-border-color,var(--color-border,#e5e7eb))] dark:border-zinc-800"
+            className={cn(
+              'shrink-0 px-6 py-4 border-b border-[var(--dialog-border-color,var(--color-border,#e5e7eb))] dark:border-zinc-800',
+              showCloseButton && 'flex items-start justify-between gap-3'
+            )}
             style={{ color: 'var(--dialog-title-color, inherit)' }}
           >
             {typeof title === 'string' ? (
@@ -123,22 +135,23 @@ function DialogInner({
                 variant="none"
                 unstyledColor
                 id={finalLabelId}
-                className="text-lg font-medium"
+                className="text-lg font-medium leading-tight"
               >
                 {title}
               </Heading>
             ) : (
               <div id={finalLabelId}>{title}</div>
             )}
-          </div>
-        )}
-        {description && (
-          <div
-            className="shrink-0 px-6 pt-4 pb-2 text-sm text-gray-500 dark:text-zinc-400"
-            id={finalDescId}
-            style={{ color: 'var(--dialog-desc-color, var(--color-muted-foreground, #6b7280))' }}
-          >
-            {description}
+            {showCloseButton && (
+              <button
+                type="button"
+                onClick={handleRequestClose}
+                aria-label="Close dialog"
+                className="w-8 h-8 -mr-1 -mt-0.5 rounded-full text-gray-500 hover:text-gray-700 hover:bg-gray-100 dark:text-zinc-400 dark:hover:text-zinc-200 dark:hover:bg-zinc-800 flex items-center justify-center shrink-0 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus-ring,var(--color-primary))]"
+              >
+                <Icon name="X" size={18} aria-hidden="true" />
+              </button>
+            )}
           </div>
         )}
         <div
@@ -148,6 +161,15 @@ function DialogInner({
             contentClassName ?? 'px-6 py-4'
           )}
         >
+          {description && (
+            <div
+              className="mb-3 text-sm text-gray-500 dark:text-zinc-400"
+              id={finalDescId}
+              style={{ color: 'var(--dialog-desc-color, var(--color-muted-foreground, #6b7280))' }}
+            >
+              {description}
+            </div>
+          )}
           {children}
         </div>
       </div>

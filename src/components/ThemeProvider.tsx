@@ -53,6 +53,7 @@ type ThemeContextType = {
   timezone: string;
   contactEmail: string;
   contactPhone: string;
+  isMessagingActive: boolean;
   themePrimary: string;
   themeSecondary: string;
   themeAccent: string;
@@ -88,6 +89,7 @@ const ThemeContext = createContext<ThemeContextType>({
   timezone: '',
   contactEmail: '',
   contactPhone: '',
+  isMessagingActive: false,
   themePrimary: '#B91C1C',
   themeSecondary: '#B45309',
   themeAccent: '#D4AF37',
@@ -208,6 +210,7 @@ type ThemeProviderProps = {
     contactEmail?: string | null;
     contactPhone?: string | null;
     twilioFromNumber?: string | null;
+    isMessagingActive?: boolean | null;
     colorPrimary?: string | null;
     colorSecondary?: string | null;
     themePreset?: ThemePreset | string | null;
@@ -239,6 +242,7 @@ function normalizeThemeConfig(propConfig?: ThemeProviderProps['config']) {
     timezone: typeof propConfig?.timezone === 'string' ? propConfig.timezone.trim() : '',
     contactEmail: propConfig?.contactEmail || '',
     contactPhone: propConfig?.contactPhone || propConfig?.twilioFromNumber || '',
+    isMessagingActive: Boolean(propConfig?.isMessagingActive),
     colorPrimary: sanitizeColor(propConfig?.colorPrimary, '#B91C1C'),
     colorSecondary: sanitizeColor(propConfig?.colorSecondary, '#B45309'),
     themePreset: sanitizePreset(propConfig?.themePreset, DEFAULT_THEME_PRESET),
@@ -576,6 +580,7 @@ export function ThemeProvider({
     timezone: config.timezone || '',
     contactEmail: config.contactEmail || '',
     contactPhone: config.contactPhone || '',
+    isMessagingActive: Boolean(config.isMessagingActive),
     ...theme,
     fontHeading,
     fontBody,

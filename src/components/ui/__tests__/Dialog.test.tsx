@@ -186,5 +186,70 @@ describe('Dialog', () => {
     expect(screen.getByRole('dialog', { name: 'Base Dialog' })).toBeInTheDocument();
     expect(document.activeElement).toBe(triggerBtn);
   });
+
+  test('portals modal backdrop to document.body, sets stack-aware inert on sibling landmarks and stacked alerts, and places description inside single scroll region', async () => {
+    function IsolationHarness() {
+      const [open, setOpen] = React.useState(true);
+      const { confirm } = useToast();
+      return (
+        <>
+          <header aria-label="Site header">
+            <a href="#main-content">Skip</a>
+          </header>
+          <main>
+            <button type="button" onClick={() => setOpen(true)}>
+              Open Dialog
+            </button>
+            <Dialog
+              isOpen={open}
+              onClose={() => setOpen(false)}
+              title="Bounded Dialog"
+              description="Scrollable description text"
+            >
+              <button type="button" onClick={() => void confirm('Discard draft?')}>
+                Ask Confirm
+              </button>
+            </Dialog>
+          </main>
+        </>
+      );
+    }
+
+    render(
+      <ToastProvider>
+        <IsolationHarness />
+      </ToastProvider>
+    );
+
+    const header = screen.getByRole('banner', { hidden: true });
+    const main = screen.getByRole('main', { hidden: true });
+    const baseDialog = screen.getByRole('dialog', { name: 'Bounded Dialog' });
+    const scrollRegion = baseDialog.querySelector('[data-scroll-region]');
+    expect(scrollRegion).not.toBeNull();
+    expect(scrollRegion).toHaveTextContent('Scrollable description text');
+
+    // Sibling landmarks receive inert while Base Dialog is open
+    expect(header).toHaveAttribute('inert');
+    expect(main).toHaveAttribute('inert');
+    expect(baseDialog.closest('[inert]')).toBeNull();
+
+    // Opening stacked alertdialog marks underlying Base Dialog backdrop and toast container inert
+    fireEvent.click(within(baseDialog).getByRole('button', { name: 'Ask Confirm' }));
+    const alertDialog = await screen.findByRole('alertdialog');
+    const toastContainer = document.querySelector('[data-toast-container]');
+
+    expect(baseDialog.closest('[inert]')).not.toBeNull();
+    expect(toastContainer).toHaveAttribute('inert');
+    expect(alertDialog.closest('[inert]')).toBeNull();
+
+    // Closing alertdialog restores Base Dialog interactivity while keeping background landmarks inert
+    fireEvent.click(within(alertDialog).getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => {
+      expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    });
+    expect(baseDialog.closest('[inert]')).toBeNull();
+    expect(toastContainer).not.toHaveAttribute('inert');
+    expect(header).toHaveAttribute('inert');
+  });
 });
 

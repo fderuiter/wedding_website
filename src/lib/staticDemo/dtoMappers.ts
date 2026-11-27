@@ -17,6 +17,7 @@ import {
 } from './seeds';
 import { createDemoSvgDataUrl } from './svgAssets';
 import { generateDemoId } from './responseHelpers';
+import { isOutboundMessagingActive } from '@/utils/guestSignInRecovery';
 
 const MAX_AUDIT_SNAPSHOTS = 40;
 
@@ -51,7 +52,12 @@ export function toAdminConfigDto(
 export function toPublicConfigDto(
   config: DemoAppConfigRecord,
 ): Record<string, unknown> {
-  const clone: Record<string, unknown> = { ...config };
+  const adminView = toAdminConfigDto(config);
+  const messagingActive = isOutboundMessagingActive(adminView);
+  const clone: Record<string, unknown> = {
+    ...config,
+    isMessagingActive: messagingActive,
+  };
   delete clone.smtpHost;
   delete clone.smtpPort;
   delete clone.smtpUser;

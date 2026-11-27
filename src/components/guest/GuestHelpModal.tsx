@@ -24,6 +24,7 @@ import { formatFriendlyTimezone } from '@/utils/dateTime';
 import { cn } from '@/utils/cn';
 import { tokenizeSafeLinks } from '@/utils/linkifyText';
 import { withBasePath } from '@/lib/basePath';
+import { GuestSignInLinkRecovery } from './GuestSignInLinkRecovery';
 
 export type GuestHelpCategory = 'passcode' | 'dietary' | 'registry' | 'faq';
 
@@ -46,6 +47,7 @@ export interface GuestHelpConfig {
   groomName?: string | null;
   rsvpOpen?: boolean | null;
   isRsvpOpen?: boolean | null;
+  isMessagingActive?: boolean | null;
   rsvpDeadlineDate?: string | null;
   rsvpClosedMessage?: string | null;
   timezone?: string | null;
@@ -280,6 +282,10 @@ export function GuestHelpModal({
     typeof config?.isRsvpOpen === 'boolean'
       ? config.isRsvpOpen
       : rsvpCutoffEvaluation.isOpen;
+  const isMessagingActive =
+    typeof config?.isMessagingActive === 'boolean'
+      ? config.isMessagingActive
+      : Boolean(theme.isMessagingActive);
   const formattedCutoffDate = useMemo(
     () => formatRsvpDeadlineDate(config?.rsvpDeadlineDate),
     [config?.rsvpDeadlineDate]
@@ -534,6 +540,9 @@ export function GuestHelpModal({
                   </li>
                 ))}
               </ul>
+            )}
+            {activeTab.id === 'passcode' && isMessagingActive && (
+              <GuestSignInLinkRecovery headingLevel="h4" />
             )}
           </div>
 

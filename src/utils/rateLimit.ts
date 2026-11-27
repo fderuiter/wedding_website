@@ -125,6 +125,7 @@ const KNOWN_STATIC_API_PATHS = new Set([
   '/api/guest/login',
   '/api/guest/lookup',
   '/api/guest/photos/upload',
+  '/api/guest/recover',
   '/api/guest/session',
   '/api/health',
   '/api/live',
@@ -169,6 +170,7 @@ function isAuthLockoutRoute(pathname: string, method: string = 'GET'): boolean {
     normalized === '/api/admin/login' ||
     normalized === '/api/guest/login' ||
     normalized === '/api/guest/lookup' ||
+    (normalized === '/api/guest/recover' && upperMethod === 'POST') ||
     (normalized === '/api/admin/setup' && upperMethod === 'POST') ||
     normalized === '/api/registry/validate-code'
   );
@@ -193,6 +195,7 @@ function isIpScopedGeneralRoute(
   const upperMethod = method.toUpperCase();
   return (
     normalized === '/api/guest/address/public' ||
+    (normalized === '/api/guest/recover' && upperMethod === 'GET') ||
     normalized === '/api/registry/claim' ||
     (normalized === '/api/admin/setup' && upperMethod === 'GET') ||
     normalized === '/api/registry/webhook/stripe' ||

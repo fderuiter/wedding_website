@@ -2132,4 +2132,32 @@ describe('CsvImportWizardModal Component', () => {
     expect(screen.getByLabelText('Party Group for row 1')).toHaveValue('Bride Side');
     expect(screen.getByLabelText('Party Tags for row 1')).toHaveValue('VIP, Tardis');
   });
+
+  test('retains focus inside the active dialog when advancing from Step 2 to Step 3 and back', async () => {
+    window.sessionStorage.clear();
+    renderModal(true);
+
+    const csvContent = 'Guest Name,Invitation Code\nAlice Smith,ALICE100';
+    const file = new File([csvContent], 'guests.csv', { type: 'text/csv' });
+    (file as unknown as { _content: string })._content = csvContent;
+
+    const input = screen.getByLabelText(/Click to select CSV file/i) as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [file] } });
+
+    await waitFor(() => {
+      expect(screen.getByText(/Guest Name Column \(Required\)/i)).toBeInTheDocument();
+    });
+
+    const dialog = screen.getByRole('dialog');
+    const continueBtn = screen.getByRole('button', { name: /Continue to Review/i });
+    continueBtn.focus();
+    expect(continueBtn).toHaveFocus();
+
+    fireEvent.click(continueBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText('3. Review & Validate')).toBeInTheDocument();
+    });
+    expect(dialog.contains(document.activeElement)).toBe(true);
+  });
 });

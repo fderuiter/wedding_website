@@ -279,4 +279,24 @@ describe('PhotoUploadQRModal Component', () => {
       Object.assign(navigator, { clipboard: originalClipboard });
     }
   });
+
+  it('retains focus inside the active dialog when toggling preview and print modes and exposes tabIndex=0 on qr-print-sheet', () => {
+    render(<PhotoUploadQRModal {...defaultProps} />);
+
+    const dialog = screen.getByRole('dialog', { name: /Guest Photo Upload QR/i });
+    const switchToPrintBtn = screen.getByTestId('switch-photo-qr-print-view-btn');
+    switchToPrintBtn.focus();
+    expect(switchToPrintBtn).toHaveFocus();
+
+    fireEvent.click(switchToPrintBtn);
+    expect(dialog.contains(document.activeElement)).toBe(true);
+
+    const printSheet = screen.getByTestId('qr-print-sheet');
+    expect(printSheet).toHaveAttribute('tabindex', '0');
+
+    const backToPreviewBtn = screen.getByTestId('back-to-photo-qr-preview-btn');
+    backToPreviewBtn.focus();
+    fireEvent.click(backToPreviewBtn);
+    expect(dialog.contains(document.activeElement)).toBe(true);
+  });
 });

@@ -1551,6 +1551,7 @@ export function getEffectiveDemoSettings(
     maxPendingReservations: cfg.maxPendingReservations,
     emailProvider: 'demo-simulated',
     smsProvider: 'demo-simulated',
+    isMessagingActive: ov.isMessagingActive !== false,
     setupCompleted: true,
     createdAt: '2026-01-15T12:00:00.000Z',
     updatedAt: new Date().toISOString(),

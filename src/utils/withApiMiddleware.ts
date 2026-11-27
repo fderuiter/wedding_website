@@ -51,6 +51,7 @@ function isAuthLockoutRoute(pathname: string, method: string): boolean {
     pathname === '/api/admin/login' ||
     pathname === '/api/guest/login' ||
     pathname === '/api/guest/lookup' ||
+    (pathname === '/api/guest/recover' && upperMethod === 'POST') ||
     (pathname === '/api/admin/setup' && upperMethod === 'POST') ||
     pathname === '/api/registry/validate-code'
   );
@@ -68,7 +69,12 @@ function shouldRecordAuthLockoutAttempt(
   if (isAuthFailureStatus(status)) {
     return true;
   }
-  return pathname === '/api/guest/lookup' && method.toUpperCase() === 'POST' && status === 200;
+  const upperMethod = method.toUpperCase();
+  return (
+    (pathname === '/api/guest/lookup' || pathname === '/api/guest/recover') &&
+    upperMethod === 'POST' &&
+    status === 200
+  );
 }
 
 function isInviteRevocationExcludedApiPath(normalizedPathname: string): boolean {
@@ -76,6 +82,7 @@ function isInviteRevocationExcludedApiPath(normalizedPathname: string): boolean 
     normalizedPathname === '/api/cron' ||
     normalizedPathname.startsWith('/api/cron/') ||
     normalizedPathname === '/api/guest/login' ||
+    normalizedPathname === '/api/guest/recover' ||
     normalizedPathname === '/api/guest/session' ||
     normalizedPathname === '/api/guest/address' ||
     normalizedPathname === '/api/guest/address/public' ||

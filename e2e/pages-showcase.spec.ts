@@ -5,12 +5,51 @@ import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import path from 'node:path';
 import { a11yConfig } from '../src/a11y-config';
+import { getPortalBaseUrl, resolveShowcasePath, withBasePath } from '../src/lib/basePath';
 
-const SUBPATH_PREFIX = '/wedding_website';
 const BUNDLE_DIR = path.resolve(
   process.cwd(),
   process.env.PAGES_BUNDLE_DIR || 'docs-portal/.vitepress/dist'
 );
+
+function normalizePortalBasePath(rawBase?: string | null): string {
+  const cleaned = String(rawBase ?? '')
+    .trim()
+    .replace(/\/+/g, '/')
+    .replace(/^\/+|\/+$/g, '');
+  return cleaned ? `/${cleaned}/` : '/';
+}
+
+function detectBuiltPortalBasePath(bundleDir: string): string {
+  const indexHtmlPath = path.join(bundleDir, 'index.html');
+  if (fs.existsSync(indexHtmlPath)) {
+    try {
+      const html = fs.readFileSync(indexHtmlPath, 'utf8');
+      const demoNavMatch = html.match(/href="([^"]*?)\/demo\/"/);
+      if (demoNavMatch) {
+        return normalizePortalBasePath(demoNavMatch[1]);
+      }
+    } catch {
+      // Fall back to root '/' if unreadable
+    }
+  }
+  return '/';
+}
+
+const PORTAL_BASE_PATH =
+  process.env.PAGES_BASE_PATH !== undefined
+    ? normalizePortalBasePath(process.env.PAGES_BASE_PATH)
+    : process.env.VITEPRESS_BASE !== undefined
+      ? normalizePortalBasePath(process.env.VITEPRESS_BASE)
+      : detectBuiltPortalBasePath(BUNDLE_DIR);
+
+const SUBPATH_PREFIX = PORTAL_BASE_PATH === '/' ? '' : PORTAL_BASE_PATH.slice(0, -1);
+const DEMO_BASE_PATH = `${SUBPATH_PREFIX}/demo`;
+const STORYBOOK_BASE_PATH = `${SUBPATH_PREFIX}/storybook`;
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
 
 const MIME_TYPES: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -126,7 +165,7 @@ async function stubExternalRequests(context: BrowserContext) {
   });
 }
 
-test.describe('Unified GitHub Pages Showcase (/wedding_website/)', () => {
+test.describe(`Unified GitHub Pages Showcase (${PORTAL_BASE_PATH})`, () => {
   test.skip(
     !hasBuiltPagesBundle,
     'Unified GitHub Pages bundle not present in docs-portal/.vitepress/dist; run npm run pages:build first.'
@@ -149,19 +188,19 @@ test.describe('Unified GitHub Pages Showcase (/wedding_website/)', () => {
         }
       }
 
-      if (pathname === SUBPATH_PREFIX) {
+      if (SUBPATH_PREFIX && pathname === SUBPATH_PREFIX) {
         res.writeHead(301, { Location: `${SUBPATH_PREFIX}/` });
         res.end();
         return;
       }
 
-      if (!pathname.startsWith(`${SUBPATH_PREFIX}/`)) {
+      if (SUBPATH_PREFIX && !pathname.startsWith(`${SUBPATH_PREFIX}/`)) {
         res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
         res.end(`Not Found Outside Subpath: ${pathname}`);
         return;
       }
 
-      const subRelPath = pathname.slice(`${SUBPATH_PREFIX}/`.length);
+      const subRelPath = pathname.slice(PORTAL_BASE_PATH.length);
       const resolvedFile = resolveBundleFile(BUNDLE_DIR, subRelPath);
       if (!resolvedFile) {
         res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
@@ -195,7 +234,7 @@ test.describe('Unified GitHub Pages Showcase (/wedding_website/)', () => {
     }
   });
 
-  test('serves VitePress Documentation Portal and Storybook Component Showcase under /wedding_website/', async ({
+  test(`serves VitePress Documentation Portal and Storybook Component Showcase under ${PORTAL_BASE_PATH}`, async ({
     context,
     page,
   }) => {
@@ -203,21 +242,26 @@ test.describe('Unified GitHub Pages Showcase (/wedding_website/)', () => {
     await stubExternalRequests(context);
     const monitors = attachStrictRuntimeMonitors(page);
 
-    await page.goto(`${origin}${SUBPATH_PREFIX}/`, { waitUntil: 'domcontentloaded' });
+    if (SUBPATH_PREFIX) {
+      const escapedResponse = await page.request.get(`${origin}/demo/`);
+      expect(escapedResponse.status()).toBe(404);
+    }
+
+    await page.goto(`${origin}${PORTAL_BASE_PATH}`, { waitUntil: 'domcontentloaded' });
     await expect(page.getByRole('link', { name: 'Live Demo' }).first()).toHaveAttribute(
       'href',
-      `${SUBPATH_PREFIX}/demo/`
+      `${DEMO_BASE_PATH}/`
     );
     await expect(page.getByRole('link', { name: 'Storybook' }).first()).toHaveAttribute(
       'href',
-      `${SUBPATH_PREFIX}/storybook/`
+      `${STORYBOOK_BASE_PATH}/`
     );
     await page.screenshot({ path: '/tmp/pages-portal.png', animations: 'disabled' });
 
-    await page.goto(`${origin}${SUBPATH_PREFIX}/api/`, { waitUntil: 'domcontentloaded' });
+    await page.goto(`${origin}${PORTAL_BASE_PATH}api/`, { waitUntil: 'domcontentloaded' });
     await expect(page.locator('body')).toContainText('API');
 
-    await page.goto(`${origin}${SUBPATH_PREFIX}/storybook/`, { waitUntil: 'domcontentloaded' });
+    await page.goto(`${origin}${STORYBOOK_BASE_PATH}/`, { waitUntil: 'domcontentloaded' });
     await expect(page.locator('#root')).toBeVisible({ timeout: 15_000 });
     const firstStoryLink = page
       .locator('#storybook-explorer-tree [data-nodetype="story"] a, #storybook-explorer-tree a[href*="/story/"]')
@@ -247,11 +291,23 @@ test.describe('Unified GitHub Pages Showcase (/wedding_website/)', () => {
     await stubExternalRequests(context);
     const monitors = attachStrictRuntimeMonitors(page);
 
-    await page.goto(`${origin}${SUBPATH_PREFIX}/demo/`, { waitUntil: 'domcontentloaded' });
+    await page.goto(`${origin}${DEMO_BASE_PATH}/`, { waitUntil: 'domcontentloaded' });
     await waitForDemoHydration(page);
     await expect(page.getByTestId('demo-portal-link')).toHaveAttribute(
       'href',
-      `${SUBPATH_PREFIX}/`
+      getPortalBaseUrl(DEMO_BASE_PATH)
+    );
+    await expect(page.getByTestId('demo-link-docs')).toHaveAttribute(
+      'href',
+      resolveShowcasePath('/', DEMO_BASE_PATH)
+    );
+    await expect(page.getByTestId('demo-link-api')).toHaveAttribute(
+      'href',
+      resolveShowcasePath('/api/', DEMO_BASE_PATH)
+    );
+    await expect(page.getByTestId('demo-link-storybook')).toHaveAttribute(
+      'href',
+      resolveShowcasePath('/storybook/', DEMO_BASE_PATH)
     );
     await expect(page.locator('main#main-content')).toBeVisible();
     await expectZeroAxeViolations(page);
@@ -266,12 +322,15 @@ test.describe('Unified GitHub Pages Showcase (/wedding_website/)', () => {
     await page.screenshot({ path: '/tmp/pages-demo-guest.png', animations: 'disabled' });
 
     // Gift Registry Interactive Contribution + Storage Persistence + Reset Demo
-    await page.goto(`${origin}${SUBPATH_PREFIX}/demo/registry`, { waitUntil: 'domcontentloaded' });
+    await page.goto(`${origin}${DEMO_BASE_PATH}/registry`, { waitUntil: 'domcontentloaded' });
     await waitForDemoHydration(page);
     await expect(page.locator('body')).toContainText('KitchenAid Stand Mixer');
 
-    const contributedAmount = await page.evaluate(async () => {
-      const res = await window.fetch('/wedding_website/demo/api/registry/contribute', {
+    const contributeEndpoint = withBasePath('/api/registry/contribute', DEMO_BASE_PATH);
+    const itemEndpoint = withBasePath('/api/registry/items/demo-classic-item-3', DEMO_BASE_PATH);
+
+    const contributedAmount = await page.evaluate(async (endpoint) => {
+      const res = await window.fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -284,25 +343,25 @@ test.describe('Unified GitHub Pages Showcase (/wedding_website/)', () => {
       });
       const json = (await res.json()) as { amountContributed?: number };
       return json.amountContributed ?? -1;
-    });
+    }, contributeEndpoint);
     expect(contributedAmount).toBe(125);
 
     await page.reload({ waitUntil: 'domcontentloaded' });
     await waitForDemoHydration(page);
-    const persistedAmount = await page.evaluate(async () => {
-      const res = await window.fetch('/wedding_website/demo/api/registry/items/demo-classic-item-3');
+    const persistedAmount = await page.evaluate(async (endpoint) => {
+      const res = await window.fetch(endpoint);
       const json = (await res.json()) as { amountContributed?: number };
       return json.amountContributed ?? -1;
-    });
+    }, itemEndpoint);
     expect(persistedAmount).toBe(125);
     await page.screenshot({ path: '/tmp/pages-demo-registry.png', animations: 'disabled' });
 
     await page.getByTestId('demo-reset-button').click();
-    const resetAmount = await page.evaluate(async () => {
-      const res = await window.fetch('/wedding_website/demo/api/registry/items/demo-classic-item-3');
+    const resetAmount = await page.evaluate(async (endpoint) => {
+      const res = await window.fetch(endpoint);
       const json = (await res.json()) as { amountContributed?: number };
       return json.amountContributed ?? -1;
-    });
+    }, itemEndpoint);
     expect(resetAmount).toBe(0);
 
     // First-Run Setup Wizard Persona & Accessibility
@@ -317,7 +376,7 @@ test.describe('Unified GitHub Pages Showcase (/wedding_website/)', () => {
     expect(monitors.consoleErrors).toEqual([]);
   });
 
-  test('serves Guest sub-routes and 3D Heart physics cleanly under /wedding_website/demo', async ({
+  test(`serves Guest sub-routes and 3D Heart physics cleanly under ${DEMO_BASE_PATH}`, async ({
     context,
     page,
   }) => {
@@ -336,7 +395,7 @@ test.describe('Unified GitHub Pages Showcase (/wedding_website/)', () => {
       const routePage = guestRoute === '/photos' ? await context.newPage() : page;
       const routeMonitors =
         routePage === page ? null : attachStrictRuntimeMonitors(routePage);
-      await routePage.goto(`${origin}${SUBPATH_PREFIX}/demo${guestRoute}`, {
+      await routePage.goto(`${origin}${DEMO_BASE_PATH}${guestRoute}`, {
         waitUntil: 'domcontentloaded',
       });
       await waitForDemoHydration(routePage);
@@ -350,7 +409,7 @@ test.describe('Unified GitHub Pages Showcase (/wedding_website/)', () => {
 
     const heartPage = await context.newPage();
     const heartMonitors = attachStrictRuntimeMonitors(heartPage);
-    await heartPage.goto(`${origin}${SUBPATH_PREFIX}/demo/heart`, {
+    await heartPage.goto(`${origin}${DEMO_BASE_PATH}/heart`, {
       waitUntil: 'domcontentloaded',
     });
     await waitForDemoHydration(heartPage);
@@ -364,7 +423,7 @@ test.describe('Unified GitHub Pages Showcase (/wedding_website/)', () => {
     expect(monitors.consoleErrors).toEqual([]);
   });
 
-  test('serves Admin Control Panel and all 14 dashboard modules cleanly under /wedding_website/', async ({
+  test(`serves Admin Control Panel and all 14 dashboard modules cleanly under ${PORTAL_BASE_PATH}`, async ({
     context,
     page,
   }) => {
@@ -372,10 +431,10 @@ test.describe('Unified GitHub Pages Showcase (/wedding_website/)', () => {
     await stubExternalRequests(context);
     const monitors = attachStrictRuntimeMonitors(page);
 
-    await page.goto(`${origin}${SUBPATH_PREFIX}/demo/`, { waitUntil: 'load' });
+    await page.goto(`${origin}${DEMO_BASE_PATH}/`, { waitUntil: 'load' });
     await waitForDemoHydration(page);
     await page.getByTestId('demo-persona-admin').click();
-    await page.goto(`${origin}${SUBPATH_PREFIX}/demo/admin/dashboard`, {
+    await page.goto(`${origin}${DEMO_BASE_PATH}/admin/dashboard`, {
       waitUntil: 'load',
     });
     await waitForDemoHydration(page);
@@ -403,12 +462,14 @@ test.describe('Unified GitHub Pages Showcase (/wedding_website/)', () => {
       await test.step(`Admin route ${adminRoute}`, async () => {
         const navLink = adminNav
           .locator(
-            `a[href="${SUBPATH_PREFIX}/demo${adminRoute}/"], a[href="${SUBPATH_PREFIX}/demo${adminRoute}"]`,
+            `a[href="${DEMO_BASE_PATH}${adminRoute}/"], a[href="${DEMO_BASE_PATH}${adminRoute}"]`,
           )
           .first();
         await expect(navLink).toBeVisible();
         await navLink.click();
-        await expect(page).toHaveURL(new RegExp(`${SUBPATH_PREFIX}/demo${adminRoute}/?$`));
+        await expect(page).toHaveURL(
+          new RegExp(`${escapeRegExp(DEMO_BASE_PATH)}${escapeRegExp(adminRoute)}/?$`)
+        );
         await expect(navLink).toHaveAttribute('aria-current', 'page');
         await waitForDemoHydration(page);
       });

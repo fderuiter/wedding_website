@@ -144,6 +144,8 @@ function RootLayoutInner({
       themePreset: demoOverrides.config.themePreset as ThemePreset,
       colorPrimary: demoOverrides.config.colorPrimary,
       colorSecondary: demoOverrides.config.colorSecondary,
+      contactEmail: demoOverrides.config.contactEmail,
+      isMessagingActive: demoOverrides.config.isMessagingActive,
     });
   }, [
     isDemoMode,
@@ -152,6 +154,8 @@ function RootLayoutInner({
     demoOverrides?.config.themePreset,
     demoOverrides?.config.colorPrimary,
     demoOverrides?.config.colorSecondary,
+    demoOverrides?.config.contactEmail,
+    demoOverrides?.config.isMessagingActive,
     setPreviewConfig,
   ]);
 
@@ -188,6 +192,7 @@ function RootLayoutInner({
     if (isDemoMode && demo) {
       return {
         ...withPreview,
+        isMessagingActive: demo.configOverrides.isMessagingActive !== false,
         ...demo.configOverrides,
       };
     }

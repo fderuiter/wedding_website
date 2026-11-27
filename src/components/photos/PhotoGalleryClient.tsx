@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef, useMemo, useSyncExternalStore } from 'react';
+import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { GuestPhotoDropzone, UploadedPhoto } from './GuestPhotoDropzone';
 import { Icon } from '@/components/ui/Icon';
@@ -8,6 +9,7 @@ import { MediaImage } from '@/components/MediaImage';
 import { Button } from '@/components/ui/Button';
 import { SegmentedTabs } from '@/components/ui/SegmentedTabs';
 import { useOptionalToast } from '@/components/ui/ToastProvider';
+import { getOverlayTabbableElements, useModalInert } from '@/hooks/useOverlay';
 import { triggerNativeExportDownload } from '@/utils/exportDownload';
 import { useOptionalDemo } from '@/components/demo/DemoContext';
 import { useStaticDemoPageOverrides } from '@/lib/staticDemo/runtime';
@@ -433,11 +435,15 @@ export function PhotoGalleryClient({
     prevSelectedPhotoIndexRef.current = selectedPhotoIndex;
   }, [selectedPhotoIndex]);
 
+  const isLightboxOpen = Boolean(currentPhoto && selectedPhotoIndex !== null);
+  useModalInert(isLightboxOpen, lightboxModalRef);
+
   useEffect(() => {
     if (selectedPhotoIndex === null) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        e.preventDefault();
         setSelectedPhotoIndex(null);
       } else if (e.key === 'ArrowLeft') {
         handlePrev();
@@ -446,22 +452,26 @@ export function PhotoGalleryClient({
       } else if (e.key === 'Tab') {
         const modal = lightboxModalRef.current;
         if (!modal) return;
-        const focusable = Array.from(
-          modal.querySelectorAll<HTMLElement>(
-            'button:not(:disabled), [tabindex]:not([tabindex="-1"]):not(:disabled)'
-          )
-        );
+        const focusable = getOverlayTabbableElements(modal);
         if (focusable.length === 0) return;
         const first = focusable[0];
         const last = focusable[focusable.length - 1];
+        const activeEl =
+          document.activeElement instanceof HTMLElement ? document.activeElement : null;
+
+        if (!activeEl || !modal.contains(activeEl)) {
+          e.preventDefault();
+          (e.shiftKey ? last : first).focus();
+          return;
+        }
 
         if (e.shiftKey) {
-          if (document.activeElement === first) {
+          if (activeEl === first) {
             e.preventDefault();
             last.focus();
           }
         } else {
-          if (document.activeElement === last) {
+          if (activeEl === last) {
             e.preventDefault();
             first.focus();
           }
@@ -828,107 +838,112 @@ export function PhotoGalleryClient({
       )}
 
       {/* Lightbox Modal */}
-      {currentPhoto && selectedPhotoIndex !== null && (
-        <div
-          ref={lightboxModalRef}
-          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 select-none"
-          onClick={() => setSelectedPhotoIndex(null)}
-          role="dialog"
-          aria-modal="true"
-          aria-label="Photo Preview"
-        >
+      {currentPhoto &&
+        selectedPhotoIndex !== null &&
+        typeof document !== 'undefined' &&
+        createPortal(
           <div
-            className="relative max-w-4xl max-h-[90vh] w-full h-full flex items-center justify-center"
-            onClick={(e) => e.stopPropagation()}
+            ref={lightboxModalRef}
+            className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto select-none"
+            onClick={() => setSelectedPhotoIndex(null)}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Photo Preview"
           >
-            {/* Position Counter Indicator */}
             <div
-              role="status"
-              aria-live="polite"
-              aria-atomic="true"
-              className="absolute top-4 left-4 z-10 px-3 py-1.5 rounded-full bg-stone-950/90 text-white text-sm font-medium tracking-wide"
-              data-testid="lightbox-counter"
+              className="relative max-w-4xl max-h-[calc(100vh-2rem)] w-full h-full flex items-center justify-center"
+              onClick={(e) => e.stopPropagation()}
             >
-              <span aria-hidden="true">
-                {selectedPhotoIndex + 1} / {visiblePhotos.length}
-              </span>
-              <span className="sr-only">
-                {`Photo ${selectedPhotoIndex + 1} of ${visiblePhotos.length}${
-                  currentPhoto.caption || currentPhoto.title
-                    ? `: ${currentPhoto.caption || currentPhoto.title}`
-                    : ''
-                }`}
-              </span>
-            </div>
-
-            {/* Close Button */}
-            <button
-              ref={closeBtnRef}
-              type="button"
-              onClick={() => setSelectedPhotoIndex(null)}
-              className="absolute top-4 right-4 z-10 p-2 rounded-full bg-stone-950/90 text-white hover:bg-stone-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white transition"
-              aria-label="Close photo preview"
-              data-testid="lightbox-close-btn"
-            >
-              <Icon name="X" className="w-6 h-6" />
-            </button>
-
-            {/* Previous Navigation Button */}
-            <button
-              type="button"
-              onClick={handlePrev}
-              disabled={!hasMultiplePhotos}
-              className="absolute left-2 sm:left-4 z-10 p-2 rounded-full bg-stone-950/90 text-white hover:bg-stone-900 disabled:opacity-30 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white transition"
-              aria-label="Previous photo"
-              data-testid="lightbox-prev-btn"
-            >
-              <Icon name="ChevronLeft" className="w-6 h-6" />
-            </button>
-
-            {/* Next Navigation Button */}
-            <button
-              type="button"
-              onClick={handleNext}
-              disabled={!hasMultiplePhotos}
-              className="absolute right-2 sm:right-4 z-10 p-2 rounded-full bg-stone-950/90 text-white hover:bg-stone-900 disabled:opacity-30 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white transition"
-              aria-label="Next photo"
-              data-testid="lightbox-next-btn"
-            >
-              <Icon name="ChevronRight" className="w-6 h-6" />
-            </button>
-
-            <MediaImage
-              src={currentPhoto.url}
-              alt={currentPhoto.title || 'Photo preview'}
-              width={1200}
-              height={800}
-              className="max-h-[85vh] max-w-full object-contain rounded-lg"
-              data-testid="lightbox-image"
-            />
-
-            {(currentPhoto.caption || currentPhoto.title) && (
+              {/* Position Counter Indicator */}
               <div
-                aria-hidden="true"
-                className="absolute bottom-4 left-1/2 -translate-x-1/2 text-center bg-stone-950/90 border border-white/10 px-4 py-2 rounded-2xl max-w-md pointer-events-none shadow-lg"
-                data-testid="lightbox-caption"
+                role="status"
+                aria-live="polite"
+                aria-atomic="true"
+                className="absolute top-4 left-4 z-10 px-3 py-1.5 rounded-full bg-stone-950/90 text-white text-sm font-medium tracking-wide"
+                data-testid="lightbox-counter"
               >
-                <p className="text-white text-sm font-medium truncate">
-                  {currentPhoto.caption || currentPhoto.title}
-                </p>
-                {currentPhoto.uploaderName &&
-                  (currentPhoto.caption || currentPhoto.title) !== `Photo by ${currentPhoto.uploaderName}` && (
-                  <p
-                    className="text-stone-200 text-xs mt-0.5 truncate"
-                    data-testid="lightbox-uploader"
-                  >
-                    Photo by {currentPhoto.uploaderName}
-                  </p>
-                )}
+                <span aria-hidden="true">
+                  {selectedPhotoIndex + 1} / {visiblePhotos.length}
+                </span>
+                <span className="sr-only">
+                  {`Photo ${selectedPhotoIndex + 1} of ${visiblePhotos.length}${
+                    currentPhoto.caption || currentPhoto.title
+                      ? `: ${currentPhoto.caption || currentPhoto.title}`
+                      : ''
+                  }`}
+                </span>
               </div>
-            )}
-          </div>
-        </div>
-      )}
+
+              {/* Close Button */}
+              <button
+                ref={closeBtnRef}
+                type="button"
+                onClick={() => setSelectedPhotoIndex(null)}
+                className="absolute top-4 right-4 z-10 p-2 rounded-full bg-stone-950/90 text-white hover:bg-stone-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white transition"
+                aria-label="Close photo preview"
+                data-testid="lightbox-close-btn"
+              >
+                <Icon name="X" className="w-6 h-6" />
+              </button>
+
+              {/* Previous Navigation Button */}
+              <button
+                type="button"
+                onClick={handlePrev}
+                disabled={!hasMultiplePhotos}
+                className="absolute left-2 sm:left-4 z-10 p-2 rounded-full bg-stone-950/90 text-white hover:bg-stone-900 disabled:opacity-30 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white transition"
+                aria-label="Previous photo"
+                data-testid="lightbox-prev-btn"
+              >
+                <Icon name="ChevronLeft" className="w-6 h-6" />
+              </button>
+
+              {/* Next Navigation Button */}
+              <button
+                type="button"
+                onClick={handleNext}
+                disabled={!hasMultiplePhotos}
+                className="absolute right-2 sm:right-4 z-10 p-2 rounded-full bg-stone-950/90 text-white hover:bg-stone-900 disabled:opacity-30 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white transition"
+                aria-label="Next photo"
+                data-testid="lightbox-next-btn"
+              >
+                <Icon name="ChevronRight" className="w-6 h-6" />
+              </button>
+
+              <MediaImage
+                src={currentPhoto.url}
+                alt={currentPhoto.title || 'Photo preview'}
+                width={1200}
+                height={800}
+                className="max-h-[calc(100vh-3rem)] max-w-full object-contain rounded-lg"
+                data-testid="lightbox-image"
+              />
+
+              {(currentPhoto.caption || currentPhoto.title) && (
+                <div
+                  aria-hidden="true"
+                  className="absolute bottom-4 left-1/2 -translate-x-1/2 text-center bg-stone-950/90 border border-white/10 px-4 py-2 rounded-2xl max-w-md pointer-events-none shadow-lg"
+                  data-testid="lightbox-caption"
+                >
+                  <p className="text-white text-sm font-medium truncate">
+                    {currentPhoto.caption || currentPhoto.title}
+                  </p>
+                  {currentPhoto.uploaderName &&
+                    (currentPhoto.caption || currentPhoto.title) !==
+                      `Photo by ${currentPhoto.uploaderName}` && (
+                    <p
+                      className="text-stone-200 text-xs mt-0.5 truncate"
+                      data-testid="lightbox-uploader"
+                    >
+                      Photo by {currentPhoto.uploaderName}
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>,
+          document.body
+        )}
     </div>
   );
 }
