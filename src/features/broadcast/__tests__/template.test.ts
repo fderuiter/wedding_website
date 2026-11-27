@@ -253,4 +253,42 @@ describe('{{rsvpUrl}} placeholder and BROADCAST_STARTER_TEMPLATES', () => {
     expect(unsafeCardHtml).toContain('href="/guest"');
     expect(unsafeCardHtml).not.toContain('javascript:');
   });
+
+  it('formats stationery card display date and calendar links in config.timezone for healed legacy and evening ceremonies', () => {
+    const legacyChicagoCard = renderStationeryCardHtml(
+      'save-the-date',
+      'Save our date!',
+      {
+        partner1Name: 'Maya',
+        partner2Name: 'Liam',
+        weddingDate: new Date('2027-06-20T00:00:00.000Z'),
+        timezone: 'America/Chicago',
+        venueName: 'The Rookery',
+        venueCity: 'Chicago',
+        venueState: 'IL',
+        baseUrl: 'https://mayaliam.example.com',
+      }
+    );
+    expect(legacyChicagoCard).toContain('June 20, 2027');
+    expect(legacyChicagoCard).not.toContain('June 19, 2027');
+    expect(legacyChicagoCard).toContain('20270620T160000%2F20270620T220000');
+
+    const eveningLaCard = renderStationeryCardHtml(
+      'formal-invitation',
+      'Join us for an evening ceremony!',
+      {
+        partner1Name: 'Maya',
+        partner2Name: 'Liam',
+        weddingDate: new Date('2027-06-21T02:30:00.000Z'),
+        timezone: 'America/Los_Angeles',
+        venueName: 'Sunset Cliff Estate',
+        venueCity: 'Malibu',
+        venueState: 'CA',
+        baseUrl: 'https://mayaliam.example.com',
+      }
+    );
+    expect(eveningLaCard).toContain('June 20, 2027');
+    expect(eveningLaCard).not.toContain('June 21, 2027');
+    expect(eveningLaCard).toContain('20270620T193000%2F20270621T013000');
+  });
 });

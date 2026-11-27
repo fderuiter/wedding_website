@@ -17722,6 +17722,9 @@
                       }
                     ]
                   },
+                  "ceremonyTime": {
+                    "type": "string"
+                  },
                   "baseUrl": {
                     "type": "string"
                   },
@@ -18313,6 +18316,9 @@
                         "format": "date-time"
                       }
                     ]
+                  },
+                  "ceremonyTime": {
+                    "type": "string"
                   },
                   "baseUrl": {
                     "type": "string"
@@ -18942,6 +18948,9 @@
                     "type": "string"
                   },
                   "weddingDate": {
+                    "type": "string"
+                  },
+                  "ceremonyTime": {
                     "type": "string"
                   },
                   "baseUrl": {

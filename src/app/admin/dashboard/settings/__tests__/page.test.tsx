@@ -1064,5 +1064,96 @@ describe('AdminSettingsPage Unsaved Draft Guard & Secret Storage Safety', () => 
       })
     );
   }, 15000);
+
+  it('hydrates and saves venue-zoned Wedding Date and Ceremony Start Time across America/Chicago and evening America/Los_Angeles without advancing the date', async () => {
+    let currentServerConfig: Record<string, unknown> = {
+      ...mockConfig,
+      weddingDate: '2027-06-20T21:00:00.000Z',
+      timezone: 'America/Chicago',
+    };
+    const putPayloads: Record<string, unknown>[] = [];
+
+    mockFetch.mockImplementation((url: string, init?: RequestInit) => {
+      if (typeof url === 'string' && url.startsWith('/api/admin/settings')) {
+        if (init?.method === 'PUT') {
+          const parsed = JSON.parse(String(init.body || '{}'));
+          putPayloads.push(parsed);
+          currentServerConfig = {
+            ...currentServerConfig,
+            ...parsed,
+          };
+          return Promise.resolve({
+            ok: true,
+            json: async () => currentServerConfig,
+          });
+        }
+        if (url.includes('list=true')) {
+          return Promise.resolve({ ok: true, json: async () => [currentServerConfig] });
+        }
+        return Promise.resolve({ ok: true, json: async () => currentServerConfig });
+      }
+      return Promise.reject(new Error(`Unhandled: ${url}`));
+    });
+
+    const { container, unmount } = render(<AdminSettingsPage />);
+
+    await waitFor(() => {
+      expect(screen.queryByText('Loading settings...')).not.toBeInTheDocument();
+    });
+
+    const dateInput = screen.getByLabelText('Wedding Date') as HTMLInputElement;
+    const timeInput = screen.getByLabelText(/Ceremony Start Time/i) as HTMLInputElement;
+    expect(dateInput.value).toBe('2027-06-20');
+    expect(timeInput.value).toBe('16:00');
+
+    const confirmation = screen.getByTestId('settings-ceremony-confirmation');
+    expect(confirmation).toHaveTextContent(/Sunday, June 20, 2027/i);
+    expect(confirmation).toHaveTextContent(/4:00 PM/i);
+    expect(confirmation).toHaveTextContent(/America\/Chicago/i);
+
+    const axeResults = await axe(container);
+    expect(axeResults).toHaveNoViolations();
+
+    // Save 2027-06-20 + 16:00 in America/Chicago -> 2027-06-20T21:00:00.000Z
+    fireEvent.click(screen.getByRole('button', { name: /Save Settings/i }));
+    await waitFor(() => {
+      expect(putPayloads.length).toBe(1);
+    });
+    expect(putPayloads[0].weddingDate).toBe('2027-06-20T21:00:00.000Z');
+    expect(dateInput.value).toBe('2027-06-20');
+    expect(timeInput.value).toBe('16:00');
+
+    unmount();
+
+    // Reload an evening ceremony 2027-06-20 at 19:30 in America/Los_Angeles (2027-06-21T02:30:00.000Z)
+    currentServerConfig = {
+      ...mockConfig,
+      weddingDate: '2027-06-21T02:30:00.000Z',
+      timezone: 'America/Los_Angeles',
+    };
+    putPayloads.length = 0;
+
+    render(<AdminSettingsPage />);
+    await waitFor(() => {
+      expect(screen.queryByText('Loading settings...')).not.toBeInTheDocument();
+    });
+
+    const laDateInput = screen.getByLabelText('Wedding Date') as HTMLInputElement;
+    const laTimeInput = screen.getByLabelText(/Ceremony Start Time/i) as HTMLInputElement;
+    expect(laDateInput.value).toBe('2027-06-20');
+    expect(laTimeInput.value).toBe('19:30');
+    expect(screen.getByTestId('settings-ceremony-confirmation')).toHaveTextContent(
+      /Sunday, June 20, 2027.*7:30 PM.*America\/Los_Angeles/i
+    );
+
+    // Re-saving preserves 2027-06-21T02:30:00.000Z and keeps 2027-06-20 + 19:30 without advancing to June 21
+    fireEvent.click(screen.getByRole('button', { name: /Save Settings/i }));
+    await waitFor(() => {
+      expect(putPayloads.length).toBe(1);
+    });
+    expect(putPayloads[0].weddingDate).toBe('2027-06-21T02:30:00.000Z');
+    expect(laDateInput.value).toBe('2027-06-20');
+    expect(laTimeInput.value).toBe('19:30');
+  }, 15000);
 });
 

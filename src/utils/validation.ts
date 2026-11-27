@@ -275,6 +275,7 @@ export const AdminSetupSchema = z.object({
   brideName: z.string().optional(),
   groomName: z.string().optional(),
   weddingDate: z.string().optional(),
+  ceremonyTime: z.string().optional(),
   baseUrl: z.string().optional(),
   contactEmail: z.string().optional(),
   venueName: z.string().optional(),

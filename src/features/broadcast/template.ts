@@ -5,6 +5,12 @@ import {
   createYahooCalendarLink,
 } from '@/utils/calendar';
 import { sanitizeUrl } from '@/utils/validationPrimitives';
+import {
+  extractVenueDateAndTime,
+  formatVenueWeddingDate,
+  normalizeVenueWeddingDate,
+  resolveVenueTimezone,
+} from '@/utils/venueDateTime';
 import { BroadcastTemplateContext } from './types';
 
 const HTML_ESCAPE_MAP: Record<string, string> = {
@@ -167,47 +173,75 @@ function resolveCoupleBranding(config?: StationeryCardConfig | null): {
   return { coupleNames, monogram };
 }
 
-function resolveWeddingDateParts(rawDate?: Date | string | null): {
+function resolveWeddingDateParts(
+  rawDate?: Date | string | null,
+  timezone?: string | null
+): {
   displayDate: string;
-  isoDate: string;
+  startDate: string;
+  startTime: string;
+  endDate: string;
+  endTime: string;
+  timeZone: string;
 } {
+  const validTimeZone = resolveVenueTimezone(timezone);
+
   if (!rawDate) {
-    return { displayDate: '', isoDate: '2026-10-25' };
+    return {
+      displayDate: '',
+      startDate: '2026-10-25',
+      startTime: '16:00',
+      endDate: '2026-10-25',
+      endTime: '22:00',
+      timeZone: validTimeZone,
+    };
   }
 
-  if (typeof rawDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(rawDate.trim())) {
-    const iso = rawDate.trim();
-    const [year, month, day] = iso.split('-').map(Number);
-    const utcDate = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
-    const display = utcDate.toLocaleDateString('en-US', {
-      month: 'long',
-      day: 'numeric',
-      year: 'numeric',
-      timeZone: 'UTC',
-    });
-    return { displayDate: display, isoDate: iso };
+  if (
+    typeof rawDate === 'string' &&
+    /^[A-Za-z]+ \d{1,2}, \d{4}$/.test(rawDate.trim())
+  ) {
+    const trimmed = rawDate.trim();
+    const parsedHuman = new Date(`${trimmed} UTC`);
+    if (!Number.isNaN(parsedHuman.getTime())) {
+      const year = parsedHuman.getUTCFullYear();
+      const month = String(parsedHuman.getUTCMonth() + 1).padStart(2, '0');
+      const day = String(parsedHuman.getUTCDate()).padStart(2, '0');
+      const iso = `${year}-${month}-${day}`;
+      return {
+        displayDate: trimmed,
+        startDate: iso,
+        startTime: '16:00',
+        endDate: iso,
+        endTime: '22:00',
+        timeZone: validTimeZone,
+      };
+    }
   }
 
-  const parsed = rawDate instanceof Date ? rawDate : new Date(rawDate);
-  if (!isNaN(parsed.getTime())) {
-    const year = parsed.getUTCFullYear();
-    const month = String(parsed.getUTCMonth() + 1).padStart(2, '0');
-    const day = String(parsed.getUTCDate()).padStart(2, '0');
-    const display =
-      typeof rawDate === 'string' && /^[A-Za-z]+ \d{1,2}, \d{4}$/.test(rawDate.trim())
-        ? rawDate.trim()
-        : parsed.toLocaleDateString('en-US', {
-          month: 'long',
-          day: 'numeric',
-          year: 'numeric',
-          timeZone: 'UTC',
-        });
-    return { displayDate: display, isoDate: `${year}-${month}-${day}` };
+  const normalized = normalizeVenueWeddingDate(rawDate, validTimeZone);
+  if (normalized) {
+    const displayDate = formatVenueWeddingDate(normalized, validTimeZone);
+    const startParts = extractVenueDateAndTime(normalized, validTimeZone);
+    const endInstant = new Date(normalized.getTime() + 6 * 60 * 60 * 1000);
+    const endParts = extractVenueDateAndTime(endInstant, validTimeZone);
+    return {
+      displayDate,
+      startDate: startParts.date || '2026-10-25',
+      startTime: startParts.time || '16:00',
+      endDate: endParts.date || startParts.date || '2026-10-25',
+      endTime: endParts.time || '22:00',
+      timeZone: validTimeZone,
+    };
   }
 
   return {
     displayDate: typeof rawDate === 'string' ? rawDate.trim() : '',
-    isoDate: '2026-10-25',
+    startDate: '2026-10-25',
+    startTime: '16:00',
+    endDate: '2026-10-25',
+    endTime: '22:00',
+    timeZone: validTimeZone,
   };
 }
 
@@ -272,7 +306,14 @@ export function renderStationeryCardHtml(
   );
   const ctaTextColor = pickReadableButtonTextColor(primaryColor);
   const { coupleNames, monogram } = resolveCoupleBranding(config);
-  const { displayDate, isoDate } = resolveWeddingDateParts(config?.weddingDate);
+  const {
+    displayDate,
+    startDate,
+    startTime,
+    endDate,
+    endTime,
+    timeZone,
+  } = resolveWeddingDateParts(config?.weddingDate, config?.timezone);
 
   const venueParts = [
     config?.venueName,
@@ -293,11 +334,11 @@ export function renderStationeryCardHtml(
 
   const calendarEvent: CalendarEvent = {
     name: `${unescapeStandardEntities(coupleNames)} — Wedding Celebration`,
-    startDate: isoDate,
-    startTime: '16:00',
-    endDate: isoDate,
-    endTime: '22:00',
-    timeZone: (config?.timezone || 'UTC').trim() || 'UTC',
+    startDate,
+    startTime,
+    endDate,
+    endTime,
+    timeZone,
     location: venueDisplay || venueHeadline || 'Wedding Venue',
     description: `Wedding celebration for ${unescapeStandardEntities(coupleNames)}. View details & RSVP: ${rsvpUrl}`,
   };

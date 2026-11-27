@@ -7,6 +7,10 @@ import {
 } from '@tanstack/react-query';
 // eslint-disable-next-line no-restricted-imports
 import { apiClient } from '@/features/admin/apiClient';
+import {
+  extractVenueDateAndTime,
+  normalizeVenueWeddingDate,
+} from '@/utils/venueDateTime';
 
 let standaloneFallbackQueryClient: QueryClient | null = null;
 
@@ -47,7 +51,12 @@ export function useAdminSettings(profileId: string = 'global') {
       queryFn: async () => {
         const data = await apiClient.get<any>(endpoint);
         if (data && data.weddingDate) {
-          data.weddingDate = data.weddingDate.split('T')[0];
+          const extracted = extractVenueDateAndTime(
+            data.weddingDate,
+            data.timezone || 'UTC',
+          );
+          data.weddingDate = extracted.date;
+          data.ceremonyTime = extracted.time;
         }
         return data;
       },
@@ -74,9 +83,20 @@ export function useAdminSettings(profileId: string = 'global') {
       mutationFn: async (newConfig: any) => {
         const targetId = newConfig.id || profileId;
         const putEndpoint = `/api/admin/settings?id=${targetId}`;
+        const normalizedInstant = newConfig.weddingDate
+          ? normalizeVenueWeddingDate(
+            newConfig.weddingDate,
+            newConfig.timezone || 'UTC',
+            newConfig.ceremonyTime,
+          )
+          : null;
         return apiClient.put(putEndpoint, {
           ...newConfig,
-          weddingDate: newConfig.weddingDate ? new Date(newConfig.weddingDate).toISOString() : undefined,
+          weddingDate: normalizedInstant
+            ? normalizedInstant.toISOString()
+            : newConfig.weddingDate
+              ? new Date(newConfig.weddingDate).toISOString()
+              : undefined,
         });
       },
       onSuccess: () => {
@@ -93,9 +113,20 @@ export function useAdminSettings(profileId: string = 'global') {
   const { mutateAsync: createProfile, isPending: creating } = useMutation(
     {
       mutationFn: async (newProfile: any) => {
+        const normalizedInstant = newProfile.weddingDate
+          ? normalizeVenueWeddingDate(
+            newProfile.weddingDate,
+            newProfile.timezone || 'UTC',
+            newProfile.ceremonyTime,
+          )
+          : null;
         return apiClient.post('/api/admin/settings', {
           ...newProfile,
-          weddingDate: newProfile.weddingDate ? new Date(newProfile.weddingDate).toISOString() : new Date().toISOString(),
+          weddingDate: normalizedInstant
+            ? normalizedInstant.toISOString()
+            : newProfile.weddingDate
+              ? new Date(newProfile.weddingDate).toISOString()
+              : new Date().toISOString(),
         });
       },
       onSuccess: () => {

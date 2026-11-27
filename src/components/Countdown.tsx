@@ -4,6 +4,11 @@ import React, { useState, useCallback, useMemo, useSyncExternalStore } from 'rea
 import { useReducedMotion } from '@/hooks/useReducedMotion';
 import { formatDate } from '@/utils/intl';
 import {
+  formatVenueWeddingDate,
+  normalizeVenueWeddingDate,
+  resolveVenueTimezone,
+} from '@/utils/venueDateTime';
+import {
   createCountdownClockStore,
   formatReadableRemaining,
   formatTimeLeftFromTicks,
@@ -18,10 +23,28 @@ import {
  * a non-focusable timer readout alongside an accessible pause/resume toggle button.
  * @param {object} props - The component props.
  * @param {string} props.targetDate - The target date for the countdown in a string format recognizable by the Date constructor (e.g., "YYYY-MM-DDTHH:mm:ss").
+ * @param {string} [props.timeZone] - Optional IANA timezone identifier for venue-localized date display and ceremony target parsing.
  * @returns {JSX.Element} The rendered Countdown component.
  */
-const Countdown = ({ targetDate }: { targetDate: string }) => {
-  const weddingDate = useMemo(() => new Date(targetDate), [targetDate]);
+const Countdown = ({
+  targetDate,
+  timeZone,
+}: {
+  targetDate: string;
+  timeZone?: string;
+}) => {
+  const resolvedTimezone = useMemo(() => resolveVenueTimezone(timeZone), [timeZone]);
+  const weddingDate = useMemo(
+    () => normalizeVenueWeddingDate(targetDate, resolvedTimezone) ?? new Date(targetDate),
+    [targetDate, resolvedTimezone]
+  );
+  const formattedFallbackDate = useMemo(
+    () =>
+      timeZone
+        ? formatVenueWeddingDate(weddingDate, resolvedTimezone) || formatDate(weddingDate)
+        : formatDate(weddingDate),
+    [timeZone, weddingDate, resolvedTimezone]
+  );
   const targetTimeMs = weddingDate.getTime();
   const prefersReducedMotion = useReducedMotion();
 
@@ -118,7 +141,7 @@ const Countdown = ({ targetDate }: { targetDate: string }) => {
     <div className="inline-flex flex-col items-center gap-2">
       {!isMounted ? (
         <div className="text-2xl font-bold text-primary dark:text-primary-text">
-          {formatDate(weddingDate)}
+          {formattedFallbackDate}
         </div>
       ) : timerComponents.length ? (
         <>
@@ -173,7 +196,7 @@ const Countdown = ({ targetDate }: { targetDate: string }) => {
       )}
       <noscript>
         <div className="text-2xl font-bold text-primary dark:text-primary-text">
-          {formatDate(weddingDate)}
+          {formattedFallbackDate}
         </div>
       </noscript>
     </div>

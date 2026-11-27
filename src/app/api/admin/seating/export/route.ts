@@ -21,6 +21,7 @@ import {
   type InvitationCodeDTO,
 } from '@/features/registry';
 import { getAppConfig } from '@/lib/config';
+import { formatVenueWeddingDate } from '@/utils/venueDateTime';
 
 const ROSTER_HEADERS = [
   'Table Name',
@@ -86,11 +87,13 @@ async function resolveExportHeaderMetadata(): Promise<{
       siteTitle = `${couple} - Seating Chart & Floorplan`;
     }
     if (config.weddingDate) {
-      weddingDateStr = new Date(config.weddingDate).toLocaleDateString('en-US', {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric',
-      });
+      const formatted = formatVenueWeddingDate(
+        config.weddingDate,
+        config.timezone
+      );
+      if (formatted) {
+        weddingDateStr = formatted;
+      }
     }
   } catch {
     // Fallback if config is unavailable

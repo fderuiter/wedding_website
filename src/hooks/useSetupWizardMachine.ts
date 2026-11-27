@@ -13,6 +13,10 @@ import {
   isThemePreset,
   type ThemePreset,
 } from '@/lib/theme/presets';
+import {
+  DEFAULT_CEREMONY_TIME,
+  normalizeCeremonyTime,
+} from '@/utils/venueDateTime';
 
 export const SETUP_WIZARD_STORAGE_KEY = 'setup_wizard_draft';
 
@@ -53,6 +57,7 @@ export interface SetupWizardPersistedState {
   partner1Name: string;
   partner2Name: string;
   weddingDate: string;
+  ceremonyTime?: string;
   baseUrl: string;
   contactEmail?: string;
   venueName: string;
@@ -77,6 +82,7 @@ export const initialSetupWizardState: SetupWizardPersistedState = {
   partner1Name: '',
   partner2Name: '',
   weddingDate: '',
+  ceremonyTime: DEFAULT_CEREMONY_TIME,
   baseUrl: '',
   contactEmail: '',
   venueName: '',
@@ -149,8 +155,17 @@ export function createInitialMachineState(
       ? mergedDraft.step
       : 1;
 
+  const resolvedCeremonyTime =
+    initialDraft?.ceremonyTime === ''
+      ? ''
+      : normalizeCeremonyTime(
+        initialDraft?.ceremonyTime,
+        DEFAULT_CEREMONY_TIME,
+      );
+
   return {
     ...mergedDraft,
+    ceremonyTime: resolvedCeremonyTime,
     themePreset: resolvedThemePreset,
     colorPrimary: resolvedColorPrimary,
     colorSecondary: resolvedColorSecondary,

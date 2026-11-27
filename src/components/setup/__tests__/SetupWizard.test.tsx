@@ -1892,4 +1892,97 @@ describe('SetupWizard focus shifting and ARIA error linking', () => {
       attractionsModule.useAdminAttractions = origAttractions;
     }
   });
+
+  test('renders Ceremony Start Time alongside Wedding Date and Venue Timezone with live confirmation and persists venue-zoned ceremony instants', async () => {
+    const submittedPayloads: Record<string, unknown>[] = [];
+    global.fetch = jest.fn((url: string | URL | Request, options?: RequestInit) => {
+      if (url.toString().includes('/api/admin/setup') && options?.method === 'POST') {
+        const parsed = options.body ? JSON.parse(String(options.body)) : {};
+        submittedPayloads.push(parsed);
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ success: true }),
+        } as Response);
+      }
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ success: true }),
+      } as Response);
+    }) as jest.Mock;
+
+    // 1. Default 16:00 ceremony in America/Chicago -> 2027-06-20T21:00:00.000Z
+    const { container, unmount } = renderWithProviders(
+      <SetupWizard
+        initialSavedConfig={{
+          step: 2,
+          partner1Name: 'Maya',
+          partner2Name: 'Liam',
+          weddingDate: '2027-06-20',
+          ceremonyTime: '16:00',
+          timezone: 'America/Chicago',
+          baseUrl: 'https://mayaliam.org',
+        }}
+      />
+    );
+
+    const dateInput = await screen.findByLabelText('Wedding Date');
+    const timeInput = screen.getByLabelText(/Ceremony Start Time/i) as HTMLInputElement;
+    expect(dateInput).toHaveValue('2027-06-20');
+    expect(timeInput.value).toBe('16:00');
+
+    const confirmation = screen.getByTestId('setup-ceremony-confirmation');
+    expect(confirmation).toHaveTextContent(/Sunday, June 20, 2027/i);
+    expect(confirmation).toHaveTextContent(/4:00 PM/i);
+    expect(confirmation).toHaveTextContent(/America\/Chicago/i);
+
+    const step2Axe = await axe(container);
+    expect(step2Axe).toHaveNoViolations();
+
+    fireEvent.click(screen.getByRole('button', { name: /Next Step/i }));
+
+    await waitFor(() => {
+      expect(submittedPayloads.some((p) => p.partner1Name === 'Maya')).toBe(true);
+    });
+    const chicagoPayload = submittedPayloads.find((p) => p.partner1Name === 'Maya')!;
+    expect(chicagoPayload.weddingDate).toBe('2027-06-20T21:00:00.000Z');
+    expect(chicagoPayload.ceremonyTime).toBe('16:00');
+    expect(chicagoPayload.timezone).toBe('America/Chicago');
+
+    unmount();
+    localStorage.clear();
+    sessionStorage.clear();
+    submittedPayloads.length = 0;
+
+    // 2. Evening 19:30 ceremony in America/Los_Angeles -> 2027-06-21T02:30:00.000Z and reloads 2027-06-20 + 19:30
+    renderWithProviders(
+      <SetupWizard
+        initialSavedConfig={{
+          step: 2,
+          partner1Name: 'Maya',
+          partner2Name: 'Liam',
+          weddingDate: '2027-06-20',
+          ceremonyTime: '19:30',
+          timezone: 'America/Los_Angeles',
+          baseUrl: 'https://mayaliam.org',
+        }}
+      />
+    );
+
+    const laDateInput = await screen.findByLabelText('Wedding Date');
+    const laTimeInput = screen.getByLabelText(/Ceremony Start Time/i) as HTMLInputElement;
+    expect(laDateInput).toHaveValue('2027-06-20');
+    expect(laTimeInput.value).toBe('19:30');
+    expect(screen.getByTestId('setup-ceremony-confirmation')).toHaveTextContent(
+      /Sunday, June 20, 2027.*7:30 PM.*America\/Los_Angeles/i
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /Next Step/i }));
+
+    await waitFor(() => {
+      expect(submittedPayloads.some((p) => p.timezone === 'America/Los_Angeles')).toBe(true);
+    });
+    const laPayload = submittedPayloads.find((p) => p.timezone === 'America/Los_Angeles')!;
+    expect(laPayload.weddingDate).toBe('2027-06-21T02:30:00.000Z');
+    expect(laPayload.ceremonyTime).toBe('19:30');
+  });
 });

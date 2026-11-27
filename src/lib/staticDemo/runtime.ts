@@ -11,6 +11,7 @@ import { createDemoStore } from './store';
 import { createStaticDemoRouter } from './router';
 import { StaticDemoToolbar } from './StaticDemoToolbar';
 import { resolveCanonicalApiPathname } from './url';
+import { extractVenueDateAndTime } from '@/utils/venueDateTime';
 import {
   getActiveAppConfig,
   toAttractionDto,
@@ -320,6 +321,7 @@ export interface StaticDemoSavedSetupConfig {
   partner1Name?: string;
   partner2Name?: string;
   weddingDate?: string;
+  ceremonyTime?: string;
   baseUrl?: string;
   contactEmail?: string;
   venueName?: string;
@@ -369,16 +371,18 @@ export function getStaticDemoSavedSetupConfig():
   const publicCfg = toPublicConfigDto(rawConfig);
   const cleanVenue = (val: string | null | undefined) =>
     val && val.trim().toUpperCase() !== 'TBD' ? val.trim() : '';
-  const parsedDate = new Date(rawConfig.weddingDate);
-  const weddingDate = Number.isNaN(parsedDate.getTime())
-    ? ''
-    : parsedDate.toISOString().slice(0, 10);
+  const resolvedTimezone = rawConfig.timezone || 'America/Chicago';
+  const hydratedDateTime = extractVenueDateAndTime(
+    rawConfig.weddingDate,
+    resolvedTimezone,
+  );
 
   return {
     step: 3,
     partner1Name,
     partner2Name,
-    weddingDate,
+    weddingDate: hydratedDateTime.date,
+    ceremonyTime: hydratedDateTime.time,
     baseUrl,
     contactEmail: (rawConfig.contactEmail || '').trim(),
     venueName: cleanVenue(rawConfig.venueName),
@@ -392,7 +396,7 @@ export function getStaticDemoSavedSetupConfig():
     ...(typeof rawConfig.longitude === 'number' && Number.isFinite(rawConfig.longitude)
       ? { longitude: rawConfig.longitude }
       : {}),
-    timezone: rawConfig.timezone || 'America/Chicago',
+    timezone: resolvedTimezone,
     themePreset: publicCfg.themePreset as PublicAppConfig['themePreset'],
     colorPrimary: rawConfig.colorPrimary || undefined,
     colorSecondary: rawConfig.colorSecondary || undefined,

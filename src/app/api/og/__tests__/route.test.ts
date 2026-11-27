@@ -119,6 +119,29 @@ describe('/api/og route', () => {
     expect(serializedTree).toContain("Alice & Bob's Wedding");
     expect(serializedTree).toContain('June 20, 2026');
     expect(serializedTree).toContain('The Grand Ballroom • New York • NY');
+
+    // Evening ceremony in America/Los_Angeles (2027-06-21T02:30:00.000Z) renders June 20, 2027 instead of UTC June 21
+    (getAppConfig as jest.Mock).mockResolvedValueOnce({
+      partner1Name: 'Alice',
+      partner2Name: 'Bob',
+      brideName: 'Alice',
+      groomName: 'Bob',
+      brandMonogram: 'A & B',
+      seoTitle: "Alice & Bob's Wedding",
+      colorPrimary: '#B91C1C',
+      colorSecondary: '#B45309',
+      weddingDate: new Date('2027-06-21T02:30:00.000Z'),
+      timezone: 'America/Los_Angeles',
+      venueName: 'Malibu Cliffside',
+      venueCity: 'Malibu',
+      venueState: 'CA',
+    });
+    const laRes = await GET(req);
+    expect(laRes.status).toBe(200);
+    const laCalls = (ImageResponse as unknown as jest.Mock).mock.calls;
+    const laTree = JSON.stringify(laCalls[laCalls.length - 1][0]);
+    expect(laTree).toContain('June 20, 2027');
+    expect(laTree).not.toContain('June 21, 2027');
   });
 
   it('supports query parameter overrides for custom previews when authenticated', async () => {

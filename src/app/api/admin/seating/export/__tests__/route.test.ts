@@ -863,4 +863,43 @@ describe('Seating Export API Route (GET /api/admin/seating/export)', () => {
     expect(escortText).not.toContain('Sample Table Guest');
     expect(escortText).not.toContain('Demo Sample Table');
   });
+
+  it('formats seating chart PDF header wedding date in config.timezone for evening ceremonies', async () => {
+    const { getAppConfig } = await import('@/lib/config');
+    (getAppConfig as jest.Mock).mockResolvedValueOnce({
+      partner1Name: 'Maya',
+      partner2Name: 'Liam',
+      brideName: 'Maya',
+      groomName: 'Liam',
+      weddingDate: new Date('2027-06-21T02:30:00.000Z'),
+      timezone: 'America/Los_Angeles',
+    });
+    mockIsAdminRequest.mockResolvedValue(true);
+    mockPrisma.seatingTable.findMany.mockResolvedValue([
+      {
+        id: 't-la',
+        name: 'Table 1',
+        shape: 'round',
+        capacity: 8,
+        x: 100,
+        y: 100,
+        width: 120,
+        height: 120,
+        rotation: 0,
+        isSample: false,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        invitationCodes: [],
+      },
+    ]);
+    mockPrisma.invitationCode.findMany.mockResolvedValue([]);
+
+    const pdfRes = await GET(
+      new NextRequest('http://localhost:3000/api/admin/seating/export?format=pdf')
+    );
+    expect(pdfRes.status).toBe(200);
+    const pdfText = decodePdfText(await pdfRes.text());
+    expect(pdfText).toContain('June 20, 2027');
+    expect(pdfText).not.toContain('June 21, 2027');
+  });
 });

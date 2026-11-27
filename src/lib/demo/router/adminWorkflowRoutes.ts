@@ -19,6 +19,7 @@ import {
   hasNonPlaceholderVenueDetails,
 } from '@/lib/setupCopy';
 import { normalizePartyTags, splitMemberFullName } from '@/utils/invitationValidation';
+import { normalizeVenueWeddingDate } from '@/utils/venueDateTime';
 import {
   buildDemoHouseholdMembersForGuest,
   type DemoBroadcastRecipientRecord,
@@ -239,12 +240,24 @@ export async function handleAdminWorkflowRoutes(
         });
       }
       const overrides: Partial<PublicAppConfig> = {};
+      const existingSetupTz = getEffectiveDemoSettings().timezone;
+      const resolvedSetupTimezone =
+        typeof body.timezone === 'string' && body.timezone.trim()
+          ? body.timezone.trim()
+          : typeof existingSetupTz === 'string' && existingSetupTz.trim()
+            ? existingSetupTz.trim()
+            : 'America/Chicago';
       if (typeof body.partner1Name === 'string') overrides.partner1Name = body.partner1Name;
       if (typeof body.partner2Name === 'string') overrides.partner2Name = body.partner2Name;
       if (typeof body.weddingDate === 'string' && body.weddingDate) {
-        overrides.weddingDate = new Date(
-          body.weddingDate.includes('T') ? body.weddingDate : `${body.weddingDate}T16:00:00Z`
+        const normalized = normalizeVenueWeddingDate(
+          body.weddingDate,
+          resolvedSetupTimezone,
+          typeof body.ceremonyTime === 'string' ? body.ceremonyTime : undefined
         );
+        if (normalized) {
+          overrides.weddingDate = normalized;
+        }
       }
       if (typeof body.venueName === 'string') {
         overrides.venueName = cleanOptionalSetupText(body.venueName);
@@ -604,15 +617,24 @@ export async function handleAdminWorkflowRoutes(
       const body = await parseJsonBody(init, rawInput);
       const overrides: Partial<PublicAppConfig> = {};
 
+      const existingSettingsTz = getEffectiveDemoSettings().timezone;
+      const resolvedSettingsTimezone =
+        typeof body.timezone === 'string' && body.timezone.trim()
+          ? body.timezone.trim()
+          : typeof existingSettingsTz === 'string' && existingSettingsTz.trim()
+            ? existingSettingsTz.trim()
+            : 'UTC';
       if (typeof body.partner1Name === 'string') overrides.partner1Name = body.partner1Name;
       if (typeof body.partner2Name === 'string') overrides.partner2Name = body.partner2Name;
       if (typeof body.brideName === 'string') overrides.brideName = body.brideName;
       if (typeof body.groomName === 'string') overrides.groomName = body.groomName;
       if (typeof body.weddingDate === 'string' && body.weddingDate) {
-        const parsed = new Date(
-          body.weddingDate.includes('T') ? body.weddingDate : `${body.weddingDate}T16:00:00Z`
+        const parsed = normalizeVenueWeddingDate(
+          body.weddingDate,
+          resolvedSettingsTimezone,
+          typeof body.ceremonyTime === 'string' ? body.ceremonyTime : undefined
         );
-        if (!Number.isNaN(parsed.getTime())) {
+        if (parsed && !Number.isNaN(parsed.getTime())) {
           overrides.weddingDate = parsed;
         }
       }
