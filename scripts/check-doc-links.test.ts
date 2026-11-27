@@ -1006,4 +1006,54 @@ describe('check-doc-links', () => {
       }),
     ]);
   });
+
+  it('scopes Markdown link scans to passed CLI paths, upgrades to full scan on deleted Markdown targets, and preserves full scans with zero arguments', async () => {
+    const tsxCli = path.join(process.cwd(), 'node_modules', 'tsx', 'dist', 'cli.mjs');
+    const scriptPath = path.join(process.cwd(), 'scripts', 'check-doc-links.ts');
+
+    fs.mkdirSync(path.join(tempDir, 'docs'), { recursive: true });
+    fs.writeFileSync(path.join(tempDir, 'docs', 'target.md'), '# Target\n', 'utf8');
+    fs.writeFileSync(
+      path.join(tempDir, 'README.md'),
+      '# Readme\n\nValid link: [Target](docs/target.md)\n',
+      'utf8'
+    );
+    fs.writeFileSync(
+      path.join(tempDir, 'docs', 'draft.md'),
+      '# Draft\n\nBroken draft: [Missing](./does-not-exist.md)\n',
+      'utf8'
+    );
+
+    // Scoped call to README.md ignores broken docs/draft.md while resolving docs/target.md in tempDir
+    const scopedRes = await checkDocLinks(tempDir, ['README.md']);
+    expect(scopedRes.passed).toBe(true);
+    expect(scopedRes.count).toBe(1);
+    expect(scopedRes.errors).toEqual([]);
+
+    const scopedCliPass = spawnSync(process.execPath, [tsxCli, scriptPath, 'README.md'], {
+      cwd: tempDir,
+      encoding: 'utf8',
+    });
+    expect(scopedCliPass.status).toBe(0);
+
+    // Zero file arguments preserves full-repository scan and catches docs/draft.md
+    const fullCliFail = spawnSync(process.execPath, [tsxCli, scriptPath], {
+      cwd: tempDir,
+      encoding: 'utf8',
+    });
+    expect(fullCliFail.status).toBe(1);
+    expect(fullCliFail.stderr).toContain('docs/draft.md');
+
+    // Deleting docs/target.md and passing the deleted path triggers full scan and catches README.md's dead link
+    fs.unlinkSync(path.join(tempDir, 'docs', 'draft.md'));
+    fs.unlinkSync(path.join(tempDir, 'docs', 'target.md'));
+
+    const deletedCliFail = spawnSync(process.execPath, [tsxCli, scriptPath, 'docs/target.md'], {
+      cwd: tempDir,
+      encoding: 'utf8',
+    });
+    expect(deletedCliFail.status).toBe(1);
+    expect(deletedCliFail.stderr).toContain('README.md');
+    expect(deletedCliFail.stderr).toContain('docs/target.md');
+  });
 });
