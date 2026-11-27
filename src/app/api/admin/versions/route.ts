@@ -1,19 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
+import { qualifyPostgresTable } from '@/lib/postgres-url.js';
 import { toPublicAppConfig } from '@/lib/config';
 import { PublicAppConfigSchema } from '@/features/content';
+import {
+  maskSnapshotEmail,
+  shouldIncludeSnapshotData,
+  toSnapshotSummaryData,
+} from '@/utils/versionSnapshots';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
-
-function maskEmail(email: string): string {
-  if (!email || typeof email !== 'string') return email;
-  if (!email.includes('@')) return '[REDACTED]';
-  const [local, domain] = email.split('@');
-  if (!local) return '[REDACTED]';
-  if (local.length <= 2) {
-    return `${local[0] || ''}***@${domain}`;
-  }
-  return `${local[0]}***${local[local.length - 1]}@${domain}`;
-}
 
 function sanitizeSnapshotData(data: any, entityType?: string): any {
   if (!data || typeof data !== 'object' || data instanceof Date) {
@@ -45,10 +41,14 @@ function sanitizeSnapshotData(data: any, entityType?: string): any {
     const lowerKey = key.toLowerCase();
 
     if (lowerKey.includes('email') && typeof val === 'string' && val.length > 0) {
-      result[key] = maskEmail(val);
+      result[key] = maskSnapshotEmail(val);
     } else if (
-      (lowerKey === 'ssn' || lowerKey === 'phone' || lowerKey === 'phonenumber') &&
-      typeof val === 'string' && val.length > 0
+      (lowerKey === 'ssn' ||
+        lowerKey === 'phone' ||
+        lowerKey === 'phonenumber' ||
+        lowerKey === 'shippingphone') &&
+      typeof val === 'string' &&
+      val.length > 0
     ) {
       result[key] = '[REDACTED]';
     } else if (val && typeof val === 'object') {
@@ -59,10 +59,87 @@ function sanitizeSnapshotData(data: any, entityType?: string): any {
   return result;
 }
 
+interface SnapshotSummarySqlRow {
+  id: string;
+  entityType: string;
+  entityId: string;
+  author: string;
+  createdAt: Date | string;
+  isDeleted: boolean;
+}
+
+async function queryVersionSummaries(
+  where: { entityType?: string; entityId?: string },
+  take: number,
+  skip: number
+): Promise<Array<Record<string, any>>> {
+  const rawQuery = (prisma as { $queryRaw?: typeof prisma.$queryRaw }).$queryRaw;
+  if (typeof rawQuery === 'function') {
+    const conditions: Prisma.Sql[] = [];
+    if (where.entityType) {
+      conditions.push(Prisma.sql`"entityType" = ${where.entityType}`);
+    }
+    if (where.entityId) {
+      conditions.push(Prisma.sql`"entityId" = ${where.entityId}`);
+    }
+    const whereSql =
+      conditions.length > 0
+        ? Prisma.sql`WHERE ${Prisma.join(conditions, ' AND ')}`
+        : Prisma.empty;
+    const snapshotVersionTable = Prisma.raw(qualifyPostgresTable('SnapshotVersion'));
+    const rawRows = await prisma.$queryRaw<SnapshotSummarySqlRow[]>(Prisma.sql`
+      SELECT
+        "id",
+        "entityType",
+        "entityId",
+        "author",
+        ("createdAt" AT TIME ZONE 'UTC') AS "createdAt",
+        CASE
+          WHEN jsonb_typeof("data") = 'object' AND ("data" -> 'deleted') = 'true'::jsonb
+          THEN true
+          ELSE false
+        END AS "isDeleted"
+      FROM ${snapshotVersionTable}
+      ${whereSql}
+      ORDER BY "createdAt" DESC
+      LIMIT ${take}
+      OFFSET ${skip}
+    `);
+    if (Array.isArray(rawRows)) {
+      return rawRows.map((row) => ({
+        id: row.id,
+        entityType: row.entityType,
+        entityId: row.entityId,
+        author: row.author,
+        createdAt:
+          row.createdAt instanceof Date ? row.createdAt : new Date(row.createdAt),
+        data: row.isDeleted === true ? { deleted: true } : {},
+      }));
+    }
+  }
+
+  const versions = await prisma.snapshotVersion.findMany({
+    where,
+    orderBy: { createdAt: 'desc' },
+    take,
+    skip,
+  });
+
+  return versions.map((v) => ({
+    id: v.id,
+    entityType: v.entityType,
+    entityId: v.entityId,
+    author: v.author,
+    createdAt: v.createdAt,
+    data: toSnapshotSummaryData(v.data),
+  }));
+}
+
 export const GET = withApiMiddleware(async (request: NextRequest) => {
   const url = new URL(request.url);
   const entityType = url.searchParams.get('entityType');
   const entityId = url.searchParams.get('entityId');
+  const rawIncludeData = url.searchParams.get('includeData');
 
   const rawPage = url.searchParams.get('page');
   const rawLimit = url.searchParams.get('limit');
@@ -86,29 +163,45 @@ export const GET = withApiMiddleware(async (request: NextRequest) => {
   const skip = (page - 1) * limit;
   const take = limit;
 
+  const normalizedEntityType = entityType?.trim() || null;
+  const normalizedEntityId = entityId?.trim() || null;
+  const includeData = shouldIncludeSnapshotData(rawIncludeData, normalizedEntityId);
+
   const where: any = {};
-  if (entityType) where.entityType = entityType;
-  if (entityId) where.entityId = entityId;
+  if (normalizedEntityType) where.entityType = normalizedEntityType;
+  if (normalizedEntityId) where.entityId = normalizedEntityId;
 
-  const [total, versions] = await Promise.all([
-    prisma.snapshotVersion.count({ where }),
-    prisma.snapshotVersion.findMany({
-      where,
-      orderBy: { createdAt: 'desc' },
-      take,
-      skip,
-    }),
-  ]);
+  let total = 0;
+  let items: Array<Record<string, any>> = [];
 
-  const sanitizedVersions = versions.map(v => ({
-    ...v,
-    data: sanitizeSnapshotData(v.data, v.entityType)
-  }));
+  if (includeData) {
+    const [count, versions] = await Promise.all([
+      prisma.snapshotVersion.count({ where }),
+      prisma.snapshotVersion.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        take,
+        skip,
+      }),
+    ]);
+    total = count;
+    items = versions.map((v) => ({
+      ...v,
+      data: sanitizeSnapshotData(v.data, v.entityType),
+    }));
+  } else {
+    const [count, summaryVersions] = await Promise.all([
+      prisma.snapshotVersion.count({ where }),
+      queryVersionSummaries(where, take, skip),
+    ]);
+    total = count;
+    items = summaryVersions;
+  }
 
   const totalPages = limit > 0 ? Math.ceil(total / limit) : 0;
 
   return NextResponse.json({
-    items: sanitizedVersions,
+    items,
     pagination: {
       total,
       totalCount: total,

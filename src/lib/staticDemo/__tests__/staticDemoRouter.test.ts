@@ -1482,4 +1482,81 @@ describe('Static Demo Fetch Router & Versioned Store', () => {
     });
     expect(disabledRecoverRes?.status).toBe(503);
   });
+
+  it('scopes GET /api/admin/versions to summary metadata unless entityId or includeData=true is specified and strips secrets/PII', async () => {
+    const store = createDemoStore({ storage: null, initialArchetype: 'classic' });
+    store.mutate((draft) => {
+      draft.snapshotVersion.unshift(
+        {
+          id: 'ver-static-deleted',
+          entityType: 'RegistryItem',
+          entityId: 'reg-del-1',
+          author: 'Admin',
+          createdAt: '2026-06-10T12:00:00.000Z',
+          data: {
+            deleted: true,
+            previous: {
+              name: 'Deleted Vase',
+              email: 'donor@example.org',
+              phone: '555-0123',
+              ssn: '123-45-6789',
+            },
+          },
+        },
+        {
+          id: 'ver-static-appconfig',
+          entityType: 'AppConfig',
+          entityId: 'global',
+          author: 'Admin',
+          createdAt: '2026-06-11T12:00:00.000Z',
+          data: {
+            ...draft.appConfig[0],
+            smtpPass: 'static-secret-pass',
+            resendApiKey: 're_static_secret',
+            twilioAuthToken: 'twilio-static-secret',
+          },
+        },
+      );
+    });
+
+    const router = createStaticDemoRouter({ store, mode: 'browser' });
+
+    const summaryRes = await router('http://localhost:3000/api/admin/versions?page=1&limit=50');
+    expect(summaryRes?.status).toBe(200);
+    const summaryJson = await summaryRes!.json();
+    const appSummary = summaryJson.data.items.find((v: { id: string }) => v.id === 'ver-static-appconfig');
+    const deletedSummary = summaryJson.data.items.find((v: { id: string }) => v.id === 'ver-static-deleted');
+    expect(appSummary.data).toEqual({});
+    expect(deletedSummary.data).toEqual({ deleted: true });
+
+    const entityRes = await router(
+      'http://localhost:3000/api/admin/versions?entityType=AppConfig&entityId=global',
+    );
+    const entityJson = await entityRes!.json();
+    const appFull = entityJson.data.items.find((v: { id: string }) => v.id === 'ver-static-appconfig');
+    expect(appFull.data.partner1Name).toBeDefined();
+    expect(appFull.data.smtpHost).toBeUndefined();
+    expect(appFull.data.smtpPass).toBeUndefined();
+    expect(appFull.data.resendApiKey).toBeUndefined();
+    expect(appFull.data.twilioAuthToken).toBeUndefined();
+    expect(appFull.data.contactEmail).toBe('h***s@wedding-demo.org');
+
+    const omitRes = await router(
+      'http://localhost:3000/api/admin/versions?entityType=AppConfig&entityId=global&includeData=false',
+    );
+    const omitJson = await omitRes!.json();
+    expect(omitJson.data.items[0].data).toEqual({});
+
+    const includeDataRes = await router(
+      'http://localhost:3000/api/admin/versions?includeData=true',
+    );
+    const includeDataJson = await includeDataRes!.json();
+    const deletedFull = includeDataJson.data.items.find(
+      (v: { id: string }) => v.id === 'ver-static-deleted',
+    );
+    expect(deletedFull.data.deleted).toBe(true);
+    expect(deletedFull.data.previous.email).toBe('d***r@example.org');
+    expect(deletedFull.data.previous.phone).toBe('[REDACTED]');
+    expect(deletedFull.data.previous.ssn).toBe('[REDACTED]');
+  });
 });

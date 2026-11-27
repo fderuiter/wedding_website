@@ -282,4 +282,205 @@ describe('Snapshot Pruning PostgreSQL Window Delete Integration', () => {
       expect(exportedIdsForEntity).toEqual(expectedSorted);
     }
   }, 30000);
+
+  it('keeps unfiltered 50-row GET /api/admin/versions PostgreSQL wire transfer and HTTP payload under 10 KB while preserving full sanitized entityId and includeData=true payloads', async () => {
+    const baseMs = Date.UTC(2026, 5, 20, 16, 0, 0);
+    const largeStory = 'Our wedding weekend celebration story details. '.repeat(85);
+    const mixedSnapshots = Array.from({ length: 50 }, (_, idx) => {
+      const createdAt = new Date(baseMs + idx * 1000);
+      if (idx % 4 === 0) {
+        return {
+          id: `perf-snap-${String(idx).padStart(2, '0')}`,
+          entityType: 'AppConfig',
+          entityId: 'global',
+          author: 'Admin',
+          createdAt,
+          data: {
+            id: 'global',
+            partner1Name: 'Casey',
+            partner2Name: 'Jordan',
+            weddingDate: '2026-06-20T16:00:00.000Z',
+            baseUrl: 'https://wedding.example.org',
+            venueName: 'Grand Conservatory',
+            venueAddress: '100 Botanical Way',
+            venueCity: 'Seattle',
+            venueState: 'WA',
+            venueZip: '98101',
+            latitude: 47.6062,
+            longitude: -122.3321,
+            storyText: largeStory,
+            venueDescription: largeStory,
+            travelAdvice: largeStory,
+            heroTitle: 'Casey & Jordan',
+            heroSubtitle: 'June 20, 2026',
+            seoTitle: 'Casey & Jordan',
+            seoDescription: 'Wedding details',
+            seoKeywords: 'wedding',
+            contactEmail: 'hosts@example.org',
+            faviconUrl: '/assets/favicon.png',
+            ogImageUrl: '/images/placeholder.png',
+            smtpHost: 'smtp.example.invalid',
+            smtpUser: 'mailer@example.invalid',
+            smtpPass: 'super-secret-smtp-pass',
+            resendApiKey: 're_super_secret',
+            sendgridApiKey: 'SG.super_secret',
+            twilioAccountSid: 'AC_SUPER_SECRET',
+            twilioAuthToken: 'twilio-super-secret',
+          },
+        };
+      }
+      if (idx % 4 === 1) {
+        return {
+          id: `perf-snap-${String(idx).padStart(2, '0')}`,
+          entityType: 'RegistryItem',
+          entityId: `reg-${idx}`,
+          author: 'Admin',
+          createdAt,
+          data: {
+            id: `reg-${idx}`,
+            name: `Stand Mixer ${idx}`,
+            description: largeStory,
+            contributors: [
+              {
+                name: 'Alex Guest',
+                email: 'alex.guest@example.org',
+                phone: '555-0144',
+                ssn: '123-45-6789',
+                amount: 150,
+              },
+            ],
+          },
+        };
+      }
+      if (idx % 4 === 2) {
+        return {
+          id: `perf-snap-${String(idx).padStart(2, '0')}`,
+          entityType: 'ContentNode',
+          entityId: `faq-deleted-${idx}`,
+          author: 'Admin',
+          createdAt,
+          data: {
+            deleted: true,
+            previous: {
+              question: 'Deleted question',
+              answer: largeStory,
+            },
+          },
+        };
+      }
+      return {
+        id: `perf-snap-${String(idx).padStart(2, '0')}`,
+        entityType: 'InvitationCode',
+        entityId: `inv-${idx}`,
+        author: 'Admin',
+        createdAt,
+        data: {
+          code: `INV-${idx}`,
+          guestName: `Household ${idx}`,
+          email: `household${idx}@example.org`,
+          phoneNumber: '555-0188',
+          notes: largeStory,
+        },
+      };
+    });
+
+    await prisma.snapshotVersion.createMany({ data: mixedSnapshots });
+    await prisma.$executeRawUnsafe('ANALYZE "SnapshotVersion"');
+
+    const globalState = globalThis as unknown as { pgPool?: any };
+    const pool = globalState.pgPool;
+    let totalWireRowBytes = 0;
+    const capturedSqlTexts: string[] = [];
+    const originalQuery = pool.query.bind(pool);
+    pool.query = async (...args: any[]) => {
+      const res = await originalQuery(...args);
+      const first = args[0];
+      const text = typeof first === 'string' ? first : first?.text || '';
+      capturedSqlTexts.push(text);
+      if (Array.isArray(res?.rows)) {
+        totalWireRowBytes += Buffer.byteLength(JSON.stringify(res.rows), 'utf8');
+      }
+      return res;
+    };
+
+    let timelineJson: any;
+    try {
+      const timelineReq = new NextRequest(
+        'http://localhost/api/admin/versions?page=1&limit=50',
+        { method: 'GET' }
+      );
+      const timelineRes = await getVersions(timelineReq, {});
+      expect(timelineRes.status).toBe(200);
+      timelineJson = await readResponseJson<any>(timelineRes);
+    } finally {
+      pool.query = originalQuery;
+    }
+
+    const timelineHttpBytes = Buffer.byteLength(JSON.stringify(timelineJson), 'utf8');
+    expect(totalWireRowBytes).toBeLessThan(10 * 1024);
+    expect(timelineHttpBytes).toBeLessThan(10 * 1024);
+    expect(
+      capturedSqlTexts.some((sql) => sql.includes('"isDeleted"') && !sql.includes('SELECT "id", "entityType", "entityId", "data"'))
+    ).toBe(true);
+
+    const timelineItems = timelineJson.data.items as Array<{
+      id: string;
+      entityType: string;
+      createdAt: string;
+      data: Record<string, unknown>;
+    }>;
+    expect(timelineItems).toHaveLength(50);
+    // Newest item is idx = 49 (baseMs + 49_000)
+    expect(timelineItems[0].id).toBe('perf-snap-49');
+    expect(new Date(timelineItems[0].createdAt).toISOString()).toBe(
+      new Date(baseMs + 49 * 1000).toISOString()
+    );
+    for (const item of timelineItems) {
+      if (item.entityType === 'ContentNode') {
+        expect(item.data).toEqual({ deleted: true });
+      } else {
+        expect(item.data).toEqual({});
+      }
+    }
+
+    // Filtered by entityId includes sanitized full AppConfig payload
+    const entityReq = new NextRequest(
+      'http://localhost/api/admin/versions?entityType=AppConfig&entityId=global',
+      { method: 'GET' }
+    );
+    const entityRes = await getVersions(entityReq, {});
+    expect(entityRes.status).toBe(200);
+    const entityJson = await readResponseJson<any>(entityRes);
+    const appConfigItem = entityJson.data.items[0].data;
+    expect(appConfigItem.partner1Name).toBe('Casey');
+    expect(appConfigItem.smtpPass).toBeUndefined();
+    expect(appConfigItem.resendApiKey).toBeUndefined();
+    expect(appConfigItem.sendgridApiKey).toBeUndefined();
+    expect(appConfigItem.twilioAuthToken).toBeUndefined();
+    expect(appConfigItem.contactEmail).toBe('h***s@example.org');
+
+    // Explicit includeData=false omits full payload even when entityId is present
+    const omitReq = new NextRequest(
+      'http://localhost/api/admin/versions?entityType=AppConfig&entityId=global&includeData=false',
+      { method: 'GET' }
+    );
+    const omitRes = await getVersions(omitReq, {});
+    const omitJson = await readResponseJson<any>(omitRes);
+    expect(omitJson.data.items[0].data).toEqual({});
+
+    // Explicit includeData=true includes sanitized payloads across entities
+    const fullReq = new NextRequest(
+      'http://localhost/api/admin/versions?page=1&limit=10&includeData=true',
+      { method: 'GET' }
+    );
+    const fullRes = await getVersions(fullReq, {});
+    const fullJson = await readResponseJson<any>(fullRes);
+    const regSnapshot = fullJson.data.items.find(
+      (i: { entityType: string }) => i.entityType === 'RegistryItem'
+    );
+    expect(regSnapshot).toBeDefined();
+    expect(regSnapshot.data.contributors[0].email).toBe('a***t@example.org');
+    expect(regSnapshot.data.contributors[0].phone).toBe('[REDACTED]');
+    expect(regSnapshot.data.contributors[0].ssn).toBe('[REDACTED]');
+  }, 30000);
 });

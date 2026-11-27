@@ -499,7 +499,7 @@ jobs:
 
           rm -rf "$TRUSTED_SCRIPTS_DIR"
           mkdir -p "$TRUSTED_SCRIPTS_DIR"
-          cp scripts/persist-buildkit-mounts.sh scripts/test-container.mjs scripts/smoke-runner.mjs "$TRUSTED_SCRIPTS_DIR/"
+          cp scripts/persist-buildkit-mounts.sh scripts/release-integrity.sh scripts/test-container.mjs scripts/smoke-runner.mjs "$TRUSTED_SCRIPTS_DIR/"
 
           GIT_AUTH_ARGS=()
           ORIGIN_URL=$(git remote get-url origin 2>/dev/null || true)
@@ -624,6 +624,7 @@ jobs:
         run: |
           mkdir -p scripts
           cp -f "$TRUSTED_SCRIPTS_DIR/persist-buildkit-mounts.sh" \
+            "$TRUSTED_SCRIPTS_DIR/release-integrity.sh" \
             "$TRUSTED_SCRIPTS_DIR/test-container.mjs" \
             "$TRUSTED_SCRIPTS_DIR/smoke-runner.mjs" \
             scripts/
@@ -710,13 +711,20 @@ jobs:
           fi
           mkdir -p /tmp/oci-handoff
           SBOM_FILE="sbom-${ARCH}.spdx.json"
-          if [ ! -f "$SBOM_FILE" ] || ! jq -e '.spdxVersion and (.packages | type == "array")' "$SBOM_FILE" >/dev/null; then
-            echo "::error::Missing or invalid SPDX JSON SBOM '${SBOM_FILE}' for architecture '${ARCH}'."
-            exit 1
-          fi
+          bash scripts/release-integrity.sh verify-spdx "$SBOM_FILE"
           cp "$SBOM_FILE" "/tmp/oci-handoff/sbom-${ARCH}.spdx.json"
           zstd -T0 -f "$OCI_TAR" -o "/tmp/oci-handoff/oci-${ARCH}.tar.zst"
           printf '%s\n' "$ARCHIVE_DIGEST" > "/tmp/oci-handoff/${ARCH}.digest"
+          bash scripts/release-integrity.sh generate-sums \
+            --dir /tmp/oci-handoff \
+            --output "/tmp/oci-handoff/sha256-${ARCH}.sums" \
+            "oci-${ARCH}.tar.zst" \
+            "sbom-${ARCH}.spdx.json"
+          bash scripts/release-integrity.sh verify-sums \
+            --dir /tmp/oci-handoff \
+            --manifest "/tmp/oci-handoff/sha256-${ARCH}.sums" \
+            "oci-${ARCH}.tar.zst" \
+            "sbom-${ARCH}.spdx.json"
 
       - name: Upload Verified OCI Archive Artifact
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -726,6 +734,7 @@ jobs:
             /tmp/oci-handoff/oci-${{ matrix.arch }}.tar.zst
             /tmp/oci-handoff/${{ matrix.arch }}.digest
             /tmp/oci-handoff/sbom-${{ matrix.arch }}.spdx.json
+            /tmp/oci-handoff/sha256-${{ matrix.arch }}.sums
           compression-level: 0
           if-no-files-found: error
           retention-days: 1
@@ -805,11 +814,38 @@ jobs:
 
       - name: Verify Per-Architecture SPDX SBOM Artifacts
         timeout-minutes: 5
+        env:
+          PROMOTE_EXISTING: ${{ needs.preflight.outputs.promote_existing }}
         run: |
+          if [ -n "$(find /tmp/oci-handoff -type l -print -quit 2>/dev/null || true)" ]; then
+            echo "::error::Symbolic links are forbidden inside /tmp/oci-handoff."
+            exit 1
+          fi
+
+          if [ "${PROMOTE_EXISTING:-false}" != "true" ]; then
+            for required_arch in amd64 arm64; do
+              SUMS_FILE="/tmp/oci-handoff/sha256-${required_arch}.sums"
+              if [ ! -s "$SUMS_FILE" ]; then
+                echo "::error::Missing or empty checksum manifest '${SUMS_FILE}' for architecture '${required_arch}'."
+                exit 1
+              fi
+              EXPECTED_LIST=$(printf '%s\n' "oci-${required_arch}.tar.zst" "sbom-${required_arch}.spdx.json" | LC_ALL=C sort)
+              ACTUAL_LIST=$(sed 's/^[a-f0-9]\{64\}  //' "$SUMS_FILE" | LC_ALL=C sort)
+              if [ "$EXPECTED_LIST" != "$ACTUAL_LIST" ]; then
+                echo "::error::Checksum manifest '${SUMS_FILE}' does not match expected handoff files."
+                exit 1
+              fi
+              if ! (cd /tmp/oci-handoff && sha256sum --check --strict "sha256-${required_arch}.sums"); then
+                echo "::error::SHA-256 checksum verification failed for '${SUMS_FILE}'."
+                exit 1
+              fi
+            done
+          fi
+
           for required_arch in amd64 arm64; do
             SBOM_FILE="/tmp/oci-handoff/sbom-${required_arch}.spdx.json"
-            if [ ! -f "$SBOM_FILE" ] || ! jq -e '.spdxVersion and (.packages | type == "array")' "$SBOM_FILE" >/dev/null; then
-              echo "::error::Missing or invalid SPDX JSON SBOM '${SBOM_FILE}' for architecture '${required_arch}'."
+            if [ ! -s "$SBOM_FILE" ] || ! jq -e 'type == "object" and (.spdxVersion | type == "string" and length > 0) and (.packages | type == "array" and length > 0)' "$SBOM_FILE" >/dev/null; then
+              echo "::error::SPDX SBOM '${SBOM_FILE}' for architecture '${required_arch}' is missing .spdxVersion or a non-empty .packages array."
               exit 1
             fi
           done
@@ -923,13 +959,31 @@ jobs:
 
           for required_arch in amd64 arm64; do
             DIGEST_FILE="/tmp/oci-handoff/${required_arch}.digest"
+            SUMS_FILE="/tmp/oci-handoff/sha256-${required_arch}.sums"
+            SBOM_FILE="/tmp/oci-handoff/sbom-${required_arch}.spdx.json"
             COMPRESSED_ARCHIVE="/tmp/oci-handoff/oci-${required_arch}.tar.zst"
             DECOMPRESSED_ARCHIVE="/tmp/oci-handoff/oci-${required_arch}.tar"
 
-            if [ ! -f "$DIGEST_FILE" ] || [ ! -f "$COMPRESSED_ARCHIVE" ]; then
-              echo "::error::Missing OCI archive or digest artifact for architecture '${required_arch}'."
+            if [ ! -f "$DIGEST_FILE" ] || [ ! -f "$COMPRESSED_ARCHIVE" ] || [ ! -s "$SUMS_FILE" ] || [ ! -s "$SBOM_FILE" ]; then
+              echo "::error::Missing OCI archive, SPDX SBOM, checksum manifest, or digest artifact for architecture '${required_arch}'."
               exit 1
             fi
+
+            if [ -n "$(find /tmp/oci-handoff -type l -print -quit 2>/dev/null || true)" ]; then
+              echo "::error::Symbolic links are forbidden inside /tmp/oci-handoff."
+              exit 1
+            fi
+            EXPECTED_LIST=$(printf '%s\n' "oci-${required_arch}.tar.zst" "sbom-${required_arch}.spdx.json" | LC_ALL=C sort)
+            ACTUAL_LIST=$(sed 's/^[a-f0-9]\{64\}  //' "$SUMS_FILE" | LC_ALL=C sort)
+            if [ "$EXPECTED_LIST" != "$ACTUAL_LIST" ]; then
+              echo "::error::Checksum manifest '${SUMS_FILE}' does not match expected handoff files."
+              exit 1
+            fi
+            if ! (cd /tmp/oci-handoff && sha256sum --check --strict "sha256-${required_arch}.sums"); then
+              echo "::error::SHA-256 checksum verification failed for '${SUMS_FILE}'."
+              exit 1
+            fi
+            jq -e 'type == "object" and (.spdxVersion | type == "string" and length > 0) and (.packages | type == "array" and length > 0)' "$SBOM_FILE" >/dev/null
 
             EXPECTED_DIGEST=$(tr -d '[:space:]' < "$DIGEST_FILE")
             if [[ ! "$EXPECTED_DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]]; then
@@ -1088,8 +1142,8 @@ jobs:
           SOURCE_REVISION=$(printf '%s' "${REVISION:-${RESOLVED_SHA:-${GITHUB_SHA:-}}}" | tr '[:upper:]' '[:lower:]')
           for required_arch in amd64 arm64; do
             SBOM_FILE="/tmp/oci-handoff/sbom-${required_arch}.spdx.json"
-            if [ ! -f "$SBOM_FILE" ] || ! jq -e '.spdxVersion and (.packages | type == "array")' "$SBOM_FILE" >/dev/null; then
-              echo "::error::Missing or invalid SPDX JSON SBOM '${SBOM_FILE}' for multi-platform index synthesis."
+            if [ ! -s "$SBOM_FILE" ] || ! jq -e 'type == "object" and (.spdxVersion | type == "string" and length > 0) and (.packages | type == "array" and length > 0)' "$SBOM_FILE" >/dev/null; then
+              echo "::error::SPDX SBOM '${SBOM_FILE}' is missing .spdxVersion or a non-empty .packages array."
               exit 1
             fi
           done
@@ -1184,8 +1238,10 @@ jobs:
                 )
               }
             ' > /tmp/oci-handoff/sbom-index.spdx.json
+          jq -e 'type == "object" and (.spdxVersion | type == "string" and length > 0) and (.packages | type == "array" and length > 0)' /tmp/oci-handoff/sbom-index.spdx.json >/dev/null
 
       - name: Attest amd64 Build Provenance
+        if: needs.preflight.outputs.promote_existing != 'true'
         timeout-minutes: 3
         env:
           DOCKER_CONFIG: ${{ steps.docker-config.outputs.docker_config }}
@@ -1196,6 +1252,7 @@ jobs:
           push-to-registry: true
 
       - name: Attest arm64 Build Provenance
+        if: needs.preflight.outputs.promote_existing != 'true'
         timeout-minutes: 3
         env:
           DOCKER_CONFIG: ${{ steps.docker-config.outputs.docker_config }}
@@ -1216,6 +1273,7 @@ jobs:
           push-to-registry: true
 
       - name: Attest amd64 SPDX SBOM
+        if: needs.preflight.outputs.promote_existing != 'true'
         timeout-minutes: 3
         env:
           DOCKER_CONFIG: ${{ steps.docker-config.outputs.docker_config }}
@@ -1227,6 +1285,7 @@ jobs:
           push-to-registry: true
 
       - name: Attest arm64 SPDX SBOM
+        if: needs.preflight.outputs.promote_existing != 'true'
         timeout-minutes: 3
         env:
           DOCKER_CONFIG: ${{ steps.docker-config.outputs.docker_config }}
@@ -1249,7 +1308,7 @@ jobs:
           push-to-registry: true
 
       - name: Attest Docker Hub amd64 Build Provenance (optional)
-        if: needs.preflight.outputs.dockerhub_repository != '' && steps.merge.outputs.dockerhub_digest != ''
+        if: needs.preflight.outputs.promote_existing != 'true' && needs.preflight.outputs.dockerhub_repository != '' && steps.merge.outputs.dockerhub_digest != ''
         timeout-minutes: 3
         env:
           DOCKER_CONFIG: ${{ steps.docker-config.outputs.docker_config }}
@@ -1261,7 +1320,7 @@ jobs:
           create-storage-record: false
 
       - name: Attest Docker Hub arm64 Build Provenance (optional)
-        if: needs.preflight.outputs.dockerhub_repository != '' && steps.merge.outputs.dockerhub_digest != ''
+        if: needs.preflight.outputs.promote_existing != 'true' && needs.preflight.outputs.dockerhub_repository != '' && steps.merge.outputs.dockerhub_digest != ''
         timeout-minutes: 3
         env:
           DOCKER_CONFIG: ${{ steps.docker-config.outputs.docker_config }}
