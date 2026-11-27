@@ -372,6 +372,141 @@ export async function handleGuestRoutes(ctx: DemoRouteContext): Promise<Response
     );
   }
 
+  // 2b. Guest Sign-In Link Recovery (simulated locally without external traffic)
+  if (path === '/api/guest/recover' && (method === 'GET' || method === 'POST')) {
+    const {
+      RECOVERY_CONFIRMATION_MESSAGE,
+      findUnambiguousRecoverableInvitation,
+      hasRecoveryHoneypotTripped,
+      isHouseholdOnRecoveryCooldown,
+      markHouseholdRecoverySent,
+      parseRecoveryIdentifier,
+    } = await import('@/utils/guestSignInRecovery');
+
+    if (method === 'GET') {
+      const capability = {
+        messagingActive: true,
+        emailActive: true,
+        smsActive: false,
+      };
+      return jsonResponse({ success: true, data: capability });
+    }
+
+    const body = await parseJsonBody(init, rawInput);
+    if (hasRecoveryHoneypotTripped(body)) {
+      return jsonResponse({
+        success: true,
+        message: RECOVERY_CONFIRMATION_MESSAGE,
+      });
+    }
+
+    const parsed = parseRecoveryIdentifier({
+      identifier: typeof body.identifier === 'string' ? body.identifier : undefined,
+      query: typeof body.query === 'string' ? body.query : undefined,
+      email: typeof body.email === 'string' ? body.email : undefined,
+      name: typeof body.name === 'string' ? body.name : undefined,
+    });
+    if (!parsed.ok) {
+      return jsonResponse({ success: false, error: parsed.error }, 400);
+    }
+
+    const dataset = getActiveArchetypeDataset();
+    const candidates = dataset.guests.map((g) => ({
+      id: g.id,
+      code: g.code,
+      guestName: g.guestName,
+      householdName: g.householdName,
+      email: g.email,
+      plusOneFirstName: g.plusOneFirstName,
+      plusOneLastName: g.plusOneLastName,
+      partyTags: g.partyTags,
+      isSample: false,
+      members: buildDemoHouseholdMembersForGuest(g),
+    }));
+
+    const matched = findUnambiguousRecoverableInvitation(candidates, parsed.data);
+    if (matched) {
+      const cooldownKey = `demo:${matched.invitation.id}`;
+      if (!isHouseholdOnRecoveryCooldown(cooldownKey)) {
+        const emailDest =
+          matched.preferredEmail ||
+          matched.invitation.email ||
+          matched.invitation.members?.find((m) => m.role !== 'CHILD' && m.email)?.email ||
+          null;
+        const phoneDest =
+          matched.invitation.members?.find((m) => m.role !== 'CHILD' && m.phone)?.phone || null;
+        const channel: 'EMAIL' | 'SMS' | null = emailDest ? 'EMAIL' : phoneDest ? 'SMS' : null;
+        const destination = channel === 'EMAIL' ? emailDest : phoneDest;
+
+        if (channel && destination) {
+          const settings = getEffectiveDemoSettings();
+          const cleanBaseUrl = String(settings.baseUrl || 'https://showcase.wedding-demo.org').replace(
+            /\/+$/,
+            ''
+          );
+          const rsvpUrl = `${cleanBaseUrl}/guest?code=${encodeURIComponent(matched.invitation.code)}`;
+          const coupleNames =
+            String(settings.heroTitle || '') ||
+            [settings.partner1Name, settings.partner2Name].filter(Boolean).join(' & ') ||
+            'Our Wedding';
+          const nowIso = new Date().toISOString();
+          const broadcastId = nextDemoId('demo-bcast-recover');
+
+          mutateActiveDataset((current) => ({
+            ...current,
+            broadcastMessages: [
+              {
+                id: broadcastId,
+                subject:
+                  channel === 'EMAIL'
+                    ? `Your Guest Portal Sign-In Link — ${coupleNames}`
+                    : '',
+                body:
+                  channel === 'EMAIL'
+                    ? `Hello ${matched.invitation.guestName},\n\nHere is your personal one-click sign-in link for ${coupleNames}:\n\n${rsvpUrl}`
+                    : `${coupleNames}: Open your personal one-click Guest Portal & RSVP sign-in link for ${matched.invitation.guestName}: ${rsvpUrl}`,
+                channel,
+                status: 'SENT',
+                audienceLabel: 'Sign-In Link Recovery',
+                recipientCount: 1,
+                sentCount: 1,
+                failedCount: 0,
+                viewedCount: 0,
+                scheduledAt: null,
+                sentAt: nowIso,
+                createdBy: 'Guest Self-Service Recovery',
+                createdAt: nowIso,
+                updatedAt: nowIso,
+                recipients: [
+                  {
+                    id: `${broadcastId}-r1`,
+                    broadcastId,
+                    invitationCodeId: matched.invitation.id,
+                    recipientName: matched.invitation.guestName,
+                    recipientEmail: channel === 'EMAIL' ? destination : null,
+                    recipientPhone: channel === 'SMS' ? destination : null,
+                    channel,
+                    status: 'SENT',
+                    sentAt: nowIso,
+                    viewedAt: null,
+                    errorMessage: null,
+                  },
+                ],
+              },
+              ...current.broadcastMessages,
+            ],
+          }));
+          markHouseholdRecoverySent(cooldownKey);
+        }
+      }
+    }
+
+    return jsonResponse({
+      success: true,
+      message: RECOVERY_CONFIRMATION_MESSAGE,
+    });
+  }
+
   // 3. Guest Invitation Lookup (by name, email, or household)
   if (path === '/api/guest/lookup' && method === 'POST') {
     const body = await parseJsonBody(init, rawInput);

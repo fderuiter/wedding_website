@@ -441,4 +441,56 @@ describe('GuestHelpModal component & WAI-ARIA compliance', () => {
     fireEvent.click(faqTab);
     expect(screen.getByText('Are children invited?')).toBeInTheDocument();
   });
+
+  it('renders self-service sign-in link recovery on the Invitation Code tab when isMessagingActive is true and hides it when false', async () => {
+    const originalFetch = global.fetch;
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        success: true,
+        message:
+          "If your details match an invited household with saved contact information, we've sent a personal one-click sign-in link.",
+      }),
+    }) as unknown as typeof fetch;
+
+    try {
+      const { container, rerender } = render(
+        <GuestHelpModal
+          isOpen={true}
+          onClose={jest.fn()}
+          initialCategory="passcode"
+          config={{ ...sampleConfig, isMessagingActive: false }}
+        />
+      );
+
+      expect(screen.queryByTestId('guest-signin-link-recovery')).not.toBeInTheDocument();
+
+      rerender(
+        <GuestHelpModal
+          isOpen={true}
+          onClose={jest.fn()}
+          initialCategory="passcode"
+          config={{ ...sampleConfig, isMessagingActive: true }}
+        />
+      );
+
+      expect(
+        screen.getByRole('heading', { level: 4, name: /Email or Text Me My Sign-In Link/i })
+      ).toBeInTheDocument();
+      expect(await axe(container)).toHaveNoViolations();
+
+      fireEvent.change(screen.getByLabelText(/Email Address or Full Guest Name/i), {
+        target: { value: 'Alex Taylor' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: /Send Sign-In Link/i }));
+
+      expect(await screen.findByTestId('guest-recovery-confirmation')).toHaveTextContent(
+        /personal one-click sign-in link/i
+      );
+      expect(await axe(container)).toHaveNoViolations();
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
 });

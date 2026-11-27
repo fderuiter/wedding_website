@@ -102,6 +102,7 @@ export default function ActiveDemoProvider({
   useEffect(() => {
     if (typeof setPreviewConfig !== 'function') return;
     const exportTokens = getServerExportTokens(storeState.themePreset);
+    const dataset = getActiveArchetypeDataset();
     setPreviewConfig({
       themePreset: storeState.themePreset,
       colorPrimary:
@@ -110,12 +111,18 @@ export default function ActiveDemoProvider({
         storeState.configOverrides.colorSecondary || exportTokens.colorSecondary,
       fontHeading: exportTokens.fontHeading,
       fontBody: exportTokens.fontBody,
+      contactEmail:
+        storeState.configOverrides.contactEmail ?? dataset.siteConfig.contactEmail,
+      isMessagingActive: storeState.configOverrides.isMessagingActive !== false,
     });
   }, [
     setPreviewConfig,
+    storeState.archetype,
     storeState.themePreset,
     storeState.configOverrides.colorPrimary,
     storeState.configOverrides.colorSecondary,
+    storeState.configOverrides.contactEmail,
+    storeState.configOverrides.isMessagingActive,
     storeState.resetCounter,
   ]);
 

@@ -1360,6 +1360,129 @@ describe('Static Demo Fetch Router & Versioned Store', () => {
     });
   });
 
+  it('simulates self-service sign-in link recovery locally in static demo mode with anti-enumeration, cooldowns, and one-click RSVP', async () => {
+    const { resetHouseholdRecoveryCooldownsForTests } = await import(
+      '@/utils/guestSignInRecovery'
+    );
+    resetHouseholdRecoveryCooldownsForTests();
+
+    const { getActiveAppConfig, toPublicConfigDto } = await import('../dtoMappers');
+    const store = createDemoStore({ storage: null, initialArchetype: 'classic' });
+    const router = createStaticDemoRouter({ store, mode: 'browser' });
+
+    // Public config DTO exposes virtual isMessagingActive: true without leaking smtpHost
+    const publicCfg = toPublicConfigDto(getActiveAppConfig(store.getSnapshot()));
+    expect(publicCfg.isMessagingActive).toBe(true);
+    expect(publicCfg.smtpHost).toBeUndefined();
+
+    // GET /api/guest/recover reports messagingActive: true
+    const capRes = await router('http://localhost:3000/api/guest/recover');
+    const capJson = await capRes!.json();
+    expect(capJson.data ?? capJson).toMatchObject({
+      messagingActive: true,
+      emailActive: true,
+    });
+
+    const initialBroadcastCount = store.getSnapshot().broadcastMessage.length;
+    const targetInvite = store.getSnapshot().invitationCode.find(
+      (inv) => !inv.isSample && !(inv.partyTags ?? []).includes('address-collection'),
+    )!;
+    const targetMemberEmail =
+      targetInvite.email ||
+      store
+        .getSnapshot()
+        .householdMember.find((m) => m.invitationCodeId === targetInvite.id && m.email)?.email ||
+      'guest1@example.org';
+
+    // Matched recovery records a simulated local broadcast with /guest?code=<CODE> and returns generic 200
+    const matchedRes = await router('http://localhost:3000/api/guest/recover', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ identifier: targetMemberEmail }),
+    });
+    expect(matchedRes?.status).toBe(200);
+    const matchedJson = await matchedRes!.json();
+    expect(matchedJson.success).toBe(true);
+    expect(JSON.stringify(matchedJson)).not.toContain(targetInvite.code);
+    expect(JSON.stringify(matchedJson)).not.toContain(targetInvite.guestName);
+
+    const afterMatchSnap = store.getSnapshot();
+    expect(afterMatchSnap.broadcastMessage.length).toBe(initialBroadcastCount + 1);
+    const simulatedBroadcast = afterMatchSnap.broadcastMessage[0];
+    expect(simulatedBroadcast.body).toContain(
+      `/guest?code=${encodeURIComponent(targetInvite.code)}`,
+    );
+
+    // Repeat submission within cooldown window returns identical 200 without adding another message
+    const cooldownRes = await router('http://localhost:3000/api/guest/recover', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ identifier: targetMemberEmail }),
+    });
+    expect(cooldownRes?.status).toBe(200);
+    expect(await cooldownRes!.json()).toEqual(matchedJson);
+    expect(store.getSnapshot().broadcastMessage.length).toBe(initialBroadcastCount + 1);
+
+    // Unmatched and honeypot submissions return identical 200 JSON
+    const unmatchedRes = await router('http://localhost:3000/api/guest/recover', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ identifier: 'unknown.person@example.org' }),
+    });
+    expect(await unmatchedRes!.json()).toEqual(matchedJson);
+
+    const honeypotRes = await router('http://localhost:3000/api/guest/recover', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ identifier: targetMemberEmail, website: 'https://bot.invalid' }),
+    });
+    expect(await honeypotRes!.json()).toEqual(matchedJson);
+
+    // Following the simulated /guest?code=<CODE> link authenticates the household and enables POST /api/rsvp
+    const urlMatch = simulatedBroadcast.body.match(/\/guest\?code=([A-Za-z0-9_-]+)/);
+    expect(urlMatch).not.toBeNull();
+    const validateRes = await router('http://localhost:3000/api/registry/validate-code', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code: decodeURIComponent(urlMatch![1]) }),
+    });
+    expect(validateRes?.status).toBe(200);
+
+    const rsvpRes = await router('http://localhost:3000/api/rsvp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        rsvps: [{ subEventId: 'sub-3', status: 'attending', plusOneCount: 0 }],
+      }),
+    });
+    expect(rsvpRes?.status).toBe(200);
+
+    // Disabling outbound providers in admin settings hides isMessagingActive and returns 503 on POST /api/guest/recover
+    await router('http://localhost:3000/api/admin/settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        emailProvider: 'smtp',
+        smtpHost: '',
+        smtpUser: '',
+        smsProvider: 'none',
+      }),
+    });
+    const disabledPublicCfg = toPublicConfigDto(getActiveAppConfig(store.getSnapshot()));
+    expect(disabledPublicCfg.isMessagingActive).toBe(false);
+    const disabledCapJson = await (
+      await router('http://localhost:3000/api/guest/recover')
+    )!.json();
+    expect((disabledCapJson.data ?? disabledCapJson).messagingActive).toBe(false);
+
+    const disabledRecoverRes = await router('http://localhost:3000/api/guest/recover', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ identifier: targetMemberEmail }),
+    });
+    expect(disabledRecoverRes?.status).toBe(503);
+  });
+
   it('scopes GET /api/admin/versions to summary metadata unless entityId or includeData=true is specified and strips secrets/PII', async () => {
     const store = createDemoStore({ storage: null, initialArchetype: 'classic' });
     store.mutate((draft) => {
