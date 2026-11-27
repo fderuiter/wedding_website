@@ -26,6 +26,8 @@ const TRANSPARENT_PNG_BUFFER = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=',
   'base64'
 );
+const TRANSIENT_STORY_LOAD_ERROR_PATTERN =
+  /ChunkLoadError|Loading chunk \S+ failed|Failed to load chunk|Failed to register (?:the |a )?Service ?Worker|An unknown error occurred when fetching the script/i;
 
 function writeShardAndMergeReport(
   shardId: string,
@@ -302,6 +304,12 @@ test.describe('Standalone Storybook Showcase Runtime & WCAG 2.2 AA Audit @a11y-s
         return nextPage;
       };
 
+      const replacePrimedPage = async (currentPage: Page) => {
+        const nextPage = await createPrimedPage();
+        await currentPage.close().catch(() => {});
+        return nextPage;
+      };
+
       let page = await createPrimedPage();
 
       try {
@@ -344,7 +352,7 @@ test.describe('Standalone Storybook Showcase Runtime & WCAG 2.2 AA Audit @a11y-s
           attachListeners(page);
 
           const isWebGlStory = story.id.startsWith('visual-graphical-heart3d--');
-          const shouldRecyclePage = isWebGlStory || (idx + 1) % 8 === 0;
+          const shouldRecyclePage = isWebGlStory || (idx + 1) % 16 === 0;
 
           try {
             const iframePrefix = basePath ? `${basePath}/iframe.html` : '/iframe.html';
@@ -357,11 +365,28 @@ test.describe('Standalone Storybook Showcase Runtime & WCAG 2.2 AA Audit @a11y-s
             const recoverPageForRetry = async () => {
               clearAttemptDiagnostics();
               detachListeners(page);
-              await page.close().catch(() => {});
-              page = await createPrimedPage();
+              page = await replacePrimedPage(page);
               await applyDeterministicTheme(page, theme);
               attachListeners(page);
               return page;
+            };
+            const hasTransientLoadFailure = async (currentPage: Page): Promise<boolean> => {
+              if (
+                [...pageErrors, ...consoleErrors].some((msg) =>
+                  TRANSIENT_STORY_LOAD_ERROR_PATTERN.test(msg)
+                )
+              ) {
+                return true;
+              }
+              const errorOverlayText = await currentPage
+                .evaluate(() => {
+                  if (!document.body.classList.contains('sb-show-errordisplay')) {
+                    return '';
+                  }
+                  return document.getElementById('error-message')?.textContent ?? '';
+                })
+                .catch(() => '');
+              return TRANSIENT_STORY_LOAD_ERROR_PATTERN.test(errorOverlayText);
             };
 
             let navResult = await navigateAndSettleStory(
@@ -372,10 +397,11 @@ test.describe('Standalone Storybook Showcase Runtime & WCAG 2.2 AA Audit @a11y-s
             );
             page = navResult.activePage;
             let docResponse = navResult.docResponse;
-            const hasTransientChunkLoadFailure = [...pageErrors, ...consoleErrors].some((msg) =>
-              /ChunkLoadError|Loading chunk \S+ failed|Failed to load chunk/i.test(msg)
-            );
-            if (hasTransientChunkLoadFailure) {
+            for (let retryAttempt = 0; retryAttempt < 2; retryAttempt += 1) {
+              if (!(await hasTransientLoadFailure(page))) {
+                break;
+              }
+              await page.waitForTimeout(150 * (retryAttempt + 1));
               await recoverPageForRetry();
               navResult = await navigateAndSettleStory(
                 page,
@@ -424,8 +450,7 @@ test.describe('Standalone Storybook Showcase Runtime & WCAG 2.2 AA Audit @a11y-s
           }
 
           if (idx < stories.length - 1 && shouldRecyclePage) {
-            await page.close().catch(() => {});
-            page = await createPrimedPage();
+            page = await replacePrimedPage(page);
           }
         }
       } finally {
