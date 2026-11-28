@@ -27,7 +27,7 @@ const TRANSPARENT_PNG_BUFFER = Buffer.from(
   'base64'
 );
 const TRANSIENT_STORY_LOAD_ERROR_PATTERN =
-  /ChunkLoadError|Loading chunk \S+ failed|Failed to load chunk|Failed to register (?:the |a )?Service ?Worker|An unknown error occurred when fetching the script/i;
+  /ChunkLoadError|Loading chunk \S+ failed|Failed to load chunk|Failed to (?:register|update) (?:the |a )?Service ?Worker|An unknown error occurred when fetching the script/i;
 
 function writeShardAndMergeReport(
   shardId: string,
@@ -264,39 +264,45 @@ test.describe('Standalone Storybook Showcase Runtime & WCAG 2.2 AA Audit @a11y-s
       const a11yFailures: string[] = [];
       let completedScans = 0;
 
-      const context = await browser.newContext({
-        colorScheme: theme,
-        reducedMotion: 'reduce',
-      });
-
-      await context.addCookies([
-        {
-          name: 'theme_mode',
-          value: theme,
-          url: origin,
-        },
-      ]);
-
       const externalUrlPattern = buildExternalUrlPattern(origin);
-      await context.route(externalUrlPattern, async (route) => {
-        const resourceType = route.request().resourceType();
-        if (resourceType === 'image') {
-          await route.fulfill({
-            status: 200,
-            headers: {
-              'Access-Control-Allow-Origin': '*',
-              'Content-Type': 'image/png',
-            },
-            body: TRANSPARENT_PNG_BUFFER,
-          });
-          return;
-        }
-        await route.fulfill({
-          status: 204,
-          headers: { 'Access-Control-Allow-Origin': '*' },
-          body: '',
+      const createStorybookContext = async () => {
+        const nextContext = await browser.newContext({
+          colorScheme: theme,
+          reducedMotion: 'reduce',
         });
-      });
+
+        await nextContext.addCookies([
+          {
+            name: 'theme_mode',
+            value: theme,
+            url: origin,
+          },
+        ]);
+
+        await nextContext.route(externalUrlPattern, async (route) => {
+          const resourceType = route.request().resourceType();
+          if (resourceType === 'image') {
+            await route.fulfill({
+              status: 200,
+              headers: {
+                'Access-Control-Allow-Origin': '*',
+                'Content-Type': 'image/png',
+              },
+              body: TRANSPARENT_PNG_BUFFER,
+            });
+            return;
+          }
+          await route.fulfill({
+            status: 204,
+            headers: { 'Access-Control-Allow-Origin': '*' },
+            body: '',
+          });
+        });
+
+        return nextContext;
+      };
+
+      let context = await createStorybookContext();
 
       const createPrimedPage = async () => {
         const nextPage = await context.newPage();
@@ -365,7 +371,10 @@ test.describe('Standalone Storybook Showcase Runtime & WCAG 2.2 AA Audit @a11y-s
             const recoverPageForRetry = async () => {
               clearAttemptDiagnostics();
               detachListeners(page);
-              page = await replacePrimedPage(page);
+              const previousContext = context;
+              context = await createStorybookContext();
+              await previousContext.close().catch(() => {});
+              page = await createPrimedPage();
               await applyDeterministicTheme(page, theme);
               attachListeners(page);
               return page;
