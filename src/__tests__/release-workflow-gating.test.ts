@@ -138,8 +138,10 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
 
     const storybookWorkflow = readWorkflow('storybook.yml');
     const storybookConcurrency = extractTopLevelSection(storybookWorkflow, 'concurrency');
-    expect(storybookConcurrency).toContain('group: storybook');
-    expect(storybookConcurrency).toContain('cancel-in-progress: false');
+    expect(storybookConcurrency).toContain('group: storybook-${{ github.ref }}');
+    expect(storybookConcurrency).toContain(
+      "cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' }}"
+    );
     expect(storybookConcurrency).toContain('queue: max');
 
     for (const jobId of [
@@ -189,7 +191,7 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
       "github.ref == 'refs/heads/main' && github.event_name == 'push'"
     );
     expect(ciJobs['prepare-docs']?.['runs-on']).toBe('ubuntu-latest');
-    expect(ciJobs['prepare-docs']?.['timeout-minutes']).toBe(20);
+    expect(ciJobs['prepare-docs']?.['timeout-minutes']).toBe(30);
     expect(ciJobs['prepare-docs']?.permissions).toEqual({ contents: 'read' });
 
     expect(ciJobs['deploy-docs']?.needs).toEqual([
@@ -266,13 +268,19 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
     );
 
     const a11yReportSection = extractJobSection(ciWorkflow, 'a11y-report');
-    expect(ciJobs['a11y-report']?.needs).toEqual(['unit-test', 'e2e-test', 'static-export-build']);
+    expect(ciJobs['a11y-report']?.needs).toEqual([
+      'unit-test',
+      'e2e-test',
+      'static-export-build',
+      'storybook-build',
+    ]);
     expect(ciJobs['a11y-report']?.if).toBe('always() && !cancelled()');
     expect(ciJobs['a11y-report']?.['timeout-minutes']).toBe(5);
     expect(ciJobs['a11y-report']?.permissions).toEqual({ contents: 'read' });
     expect(a11yReportSection).toContain('name: static-a11y-violations');
+    expect(a11yReportSection).toContain('name: storybook-a11y-violations');
     expect(a11yReportSection).toContain(
-      'node scripts/a11y-report.mjs --include-static --require-complete'
+      'node scripts/a11y-report.mjs --include-static --include-storybook --require-complete'
     );
     expect(a11yReportSection).toContain('name: a11y-summary');
     expect(a11yReportSection).not.toContain('actions/github-script');
@@ -328,8 +336,14 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
     expect(attestBundlesSection).toContain('actions/attest-build-provenance@');
 
     const storybookJobs = parseWorkflowJobs(storybookWorkflow);
+    expect(ciJobs['storybook-build']?.permissions).toEqual({
+      contents: 'read',
+      'id-token': 'write',
+      attestations: 'write',
+    });
     const attestStorybookSection = extractJobSection(storybookWorkflow, 'attest-storybook');
     expect(storybookJobs['attest-storybook']?.needs).toEqual(['build']);
+    expect(storybookJobs['attest-storybook']?.if).toBe("github.event_name == 'workflow_dispatch'");
     expect(storybookJobs['attest-storybook']?.['timeout-minutes']).toBe(5);
     expect(storybookJobs['attest-storybook']?.permissions).toEqual({
       contents: 'read',
@@ -1216,6 +1230,7 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
 
     const storybookWorkflow = readWorkflow('storybook.yml');
     const storybookOnSection = extractTopLevelSection(storybookWorkflow, 'on');
+    expect(storybookOnSection).toContain('workflow_call:');
     expect(storybookOnSection).toContain('workflow_dispatch:');
     expect(storybookOnSection).not.toContain('push:');
     expect(storybookOnSection).not.toMatch(/-\s*main\b/);
@@ -2085,7 +2100,7 @@ process.exit(1);
 
     const storybookCiSection =
       (ciWorkflow.split(/\n  storybook-build:\n/)[1] ?? '').split(/\n  static-export-build:\n/)[0] ?? '';
-    expect(storybookCiSection).toContain('run: npm ci --ignore-scripts');
+    expect(storybookCiSection).toContain('uses: ./.github/workflows/storybook.yml');
 
     const storybookWorkflow = readWorkflow('storybook.yml');
     expect(storybookWorkflow).toContain('run: npm ci --ignore-scripts');
@@ -2379,6 +2394,7 @@ process.exit(1);
       UNIT_TEST_RESULT: 'success',
       E2E_TEST_RESULT: 'success',
       STATIC_EXPORT_BUILD_RESULT: 'success',
+      STORYBOOK_BUILD_RESULT: 'success',
     };
     const passA11y = spawnSync('bash', ['-eo', 'pipefail', '-c', a11yUpstreamScript!], {
       encoding: 'utf8',
@@ -2390,6 +2406,7 @@ process.exit(1);
       ['UNIT_TEST_RESULT', 'unit-test'],
       ['E2E_TEST_RESULT', 'e2e-test'],
       ['STATIC_EXPORT_BUILD_RESULT', 'static-export-build'],
+      ['STORYBOOK_BUILD_RESULT', 'storybook-build'],
     ] as const) {
       const failA11y = spawnSync('bash', ['-eo', 'pipefail', '-c', a11yUpstreamScript!], {
         encoding: 'utf8',

@@ -94,7 +94,8 @@ const SUITE_ARTIFACT_SPECS = [
     relativePath: 'test-results/jest-a11y-violations.json',
     label: 'Jest',
     includeRouteLabel: false,
-    shouldInclude: ({ exists, onlyStatic }) => !onlyStatic || exists,
+    shouldInclude: ({ exists, onlyStatic, onlyStorybook }) =>
+      (!onlyStatic && !onlyStorybook) || exists,
     parse: (rawData) => parseJestViolations(rawData),
     formatClean: () => '✅ No accessibility violations found in components.\n\n',
     formatViolationHeader: (count) => `❌ Found ${count} violations in components.\n`,
@@ -105,7 +106,8 @@ const SUITE_ARTIFACT_SPECS = [
     relativePath: 'test-results/playwright-a11y-violations.json',
     label: 'Playwright',
     includeRouteLabel: true,
-    shouldInclude: ({ exists, onlyStatic }) => !onlyStatic || exists,
+    shouldInclude: ({ exists, onlyStatic, onlyStorybook }) =>
+      (!onlyStatic && !onlyStorybook) || exists,
     parse: (rawData) => parseRouteOrArrayViolations(rawData, 'Playwright'),
     formatClean: () => '✅ No accessibility violations found in pages.\n\n',
     formatViolationHeader: (count) => `❌ Found ${count} violations in pages.\n`,
@@ -116,7 +118,8 @@ const SUITE_ARTIFACT_SPECS = [
     relativePath: 'test-results/static-a11y-violations.json',
     label: 'Static showcase',
     includeRouteLabel: true,
-    shouldInclude: ({ exists, requireStatic }) => exists || requireStatic,
+    shouldInclude: ({ exists, requireStatic, onlyStorybook }) =>
+      (!onlyStorybook && exists) || requireStatic,
     parse: (rawData) => parseRouteOrArrayViolations(rawData, 'static showcase'),
     formatClean: (scanCount) =>
       scanCount > 0
@@ -124,12 +127,29 @@ const SUITE_ARTIFACT_SPECS = [
         : '✅ No accessibility violations found in static showcase.\n\n',
     formatViolationHeader: (count) => `❌ Found ${count} violations in static showcase.\n`,
   },
+  {
+    id: 'storybook-showcase',
+    heading: '### Storybook Showcase (Playwright Light & Dark)\n',
+    relativePath: 'test-results/storybook-a11y-violations.json',
+    label: 'Storybook showcase',
+    includeRouteLabel: true,
+    shouldInclude: ({ exists, requireStorybook, onlyStatic }) =>
+      (!onlyStatic && exists) || requireStorybook,
+    parse: (rawData) => parseRouteOrArrayViolations(rawData, 'Storybook showcase'),
+    formatClean: (scanCount) =>
+      scanCount > 0
+        ? `✅ No accessibility violations found across ${scanCount} Storybook story/theme scans.\n\n`
+        : '✅ No accessibility violations found in Storybook showcase.\n\n',
+    formatViolationHeader: (count) => `❌ Found ${count} violations in storybook showcase.\n`,
+  },
 ];
 
 export function generateReport(options = {}) {
   const cwd = options.cwd || process.cwd();
   const onlyStatic = Boolean(options.onlyStatic);
+  const onlyStorybook = Boolean(options.onlyStorybook);
   const requireStatic = Boolean(options.requireStatic || onlyStatic);
+  const requireStorybook = Boolean(options.requireStorybook || onlyStorybook);
   const requireComplete = Boolean(options.requireComplete);
   let totalViolations = 0;
   const incompleteSuites = [];
@@ -139,7 +159,15 @@ export function generateReport(options = {}) {
   for (const spec of SUITE_ARTIFACT_SPECS) {
     const artifactPath = path.join(cwd, ...spec.relativePath.split('/'));
     const exists = fs.existsSync(artifactPath);
-    if (!spec.shouldInclude({ exists, onlyStatic, requireStatic })) {
+    if (
+      !spec.shouldInclude({
+        exists,
+        onlyStatic,
+        requireStatic,
+        onlyStorybook,
+        requireStorybook,
+      })
+    ) {
       continue;
     }
 
@@ -350,6 +378,62 @@ export function runA11yStatic(options = {}) {
   return 0;
 }
 
+export function runA11yStorybook(options = {}) {
+  const cwd = options.cwd || process.cwd();
+  const runStep = options.runStep || defaultRunStep;
+  const basePath =
+    options.basePath || process.env.NEXT_PUBLIC_BASE_PATH || '/wedding_website/storybook';
+
+  const storybookIndex = path.join(cwd, 'storybook-static', 'index.html');
+  if (!fs.existsSync(storybookIndex) || options.forceBuildStorybook) {
+    const buildStatus = runStep('npm', ['run', 'build-storybook'], cwd, {
+      NEXT_PUBLIC_BASE_PATH: basePath,
+    });
+    if (buildStatus !== 0) {
+      return buildStatus;
+    }
+  }
+
+  const resultsDir = path.join(cwd, 'test-results');
+  fs.mkdirSync(resultsDir, { recursive: true });
+  const storybookFile = path.join(resultsDir, 'storybook-a11y-violations.json');
+  fs.rmSync(storybookFile, { force: true });
+  for (const entry of fs.readdirSync(resultsDir)) {
+    if (entry.startsWith('.storybook-a11y-shard-')) {
+      fs.rmSync(path.join(resultsDir, entry), { force: true });
+    }
+  }
+
+  const playwrightStatus = runStep(
+    'npx',
+    ['playwright', 'test', '-c', 'playwright.storybook.config.ts'],
+    cwd,
+    {
+      NEXT_PUBLIC_BASE_PATH: basePath,
+    }
+  );
+  if (fs.existsSync(resultsDir)) {
+    for (const entry of fs.readdirSync(resultsDir)) {
+      if (entry.startsWith('.storybook-a11y-shard-')) {
+        fs.rmSync(path.join(resultsDir, entry), { force: true });
+      }
+    }
+  }
+  const { totalViolations, parseErrors } = generateReport({
+    cwd,
+    onlyStorybook: true,
+    requireStorybook: true,
+  });
+
+  if (playwrightStatus !== 0) {
+    return playwrightStatus;
+  }
+  if (totalViolations > 0 || parseErrors.length > 0) {
+    return 1;
+  }
+  return 0;
+}
+
 export function runA11ySuite(options = {}) {
   const cwd = options.cwd || process.cwd();
   const runStep = options.runStep || defaultRunStep;
@@ -392,6 +476,12 @@ export function main(argv = process.argv.slice(2), options = {}) {
     return;
   }
 
+  if (argv.includes('--storybook')) {
+    const exitCode = runA11yStorybook(options);
+    process.exit(exitCode);
+    return;
+  }
+
   if (argv.includes('--run')) {
     const exitCode = runA11ySuite(options);
     process.exit(exitCode);
@@ -403,6 +493,7 @@ export function main(argv = process.argv.slice(2), options = {}) {
   const reportOptions = {
     ...options,
     ...(argv.includes('--include-static') ? { requireStatic: true } : {}),
+    ...(argv.includes('--include-storybook') ? { requireStorybook: true } : {}),
     ...(requireComplete ? { requireComplete: true } : {}),
   };
   const { totalViolations, incompleteSuites, parseErrors } = generateReport(reportOptions);

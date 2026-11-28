@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import type { Meta, StoryObj } from '@storybook/react';
-import { ToastProvider } from '@/components/ui/ToastProvider';
 import { Button } from '@/components/ui/Button';
 import { SubEventEditorModal, type EditableSubEvent } from './SubEventEditorModal';
 
@@ -55,19 +54,17 @@ function SubEventEditorStoryWrapper({ initialOpen = true }: { initialOpen?: bool
   const [isOpen, setIsOpen] = useState(initialOpen);
 
   return (
-    <ToastProvider>
-      <div className="p-6 space-y-4">
-        <Button onClick={() => setIsOpen(true)}>Edit Plated Reception Event</Button>
-        <SubEventEditorModal
-          isOpen={isOpen}
-          onClose={() => setIsOpen(false)}
-          editingEvent={samplePlatedEvent}
-          existingSubEvents={[samplePlatedEvent]}
-          onSelectEdit={() => {}}
-          onSave={async () => {}}
-        />
-      </div>
-    </ToastProvider>
+    <div className="p-6 space-y-4">
+      <Button onClick={() => setIsOpen(true)}>Edit Plated Reception Event</Button>
+      <SubEventEditorModal
+        isOpen={isOpen}
+        onClose={() => setIsOpen(false)}
+        editingEvent={samplePlatedEvent}
+        existingSubEvents={[samplePlatedEvent]}
+        onSelectEdit={() => {}}
+        onSave={async () => {}}
+      />
+    </div>
   );
 }
 

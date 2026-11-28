@@ -483,8 +483,9 @@ process.exit(1);
       queue: 'max',
     });
     expect(storybookDoc.concurrency).toEqual({
-      group: 'storybook',
-      'cancel-in-progress': false,
+      group: 'storybook-${{ github.ref }}',
+      'cancel-in-progress':
+        "${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' }}",
       queue: 'max',
     });
     expect(ciDoc.jobs?.['prepare-docs']?.if).toBe(

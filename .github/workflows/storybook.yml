@@ -4,20 +4,32 @@ permissions:
   contents: read
 
 on:
+  workflow_call:
+    inputs:
+      storybook_base_path:
+        description: 'Pre-resolved GitHub Pages Storybook base path from caller'
+        required: false
+        type: string
+    outputs:
+      storybook_base_path:
+        description: 'Resolved GitHub Pages Storybook base path'
+        value: ${{ jobs.build.outputs.storybook_base_path }}
   workflow_dispatch:
 
 concurrency:
-  group: storybook
-  cancel-in-progress: false
+  group: storybook-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' }}
   queue: max
 
 jobs:
   build:
-    name: Build Static Storybook
+    name: Build & Audit Static Storybook
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: read
-    timeout-minutes: 15
+    outputs:
+      storybook_base_path: ${{ steps.base-path.outputs.storybook_base }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -31,18 +43,94 @@ jobs:
       - name: Install dependencies
         run: npm ci --ignore-scripts
 
+      - name: Resolve Pages base path
+        id: base-path
+        timeout-minutes: 2
+        env:
+          INPUT_STORYBOOK_BASE: ${{ inputs.storybook_base_path }}
+          GH_REPO: ${{ github.repository }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          if [ -n "${INPUT_STORYBOOK_BASE:-}" ]; then
+            STORYBOOK_BASE=$(printf '%s' "$INPUT_STORYBOOK_BASE" | sed 's:/*$::')
+            if [ -z "$STORYBOOK_BASE" ]; then
+              STORYBOOK_BASE="/storybook"
+            fi
+          else
+            PAGES_API_JSON=""
+            if [ -n "${GH_REPO:-}" ] && [ -n "${GITHUB_TOKEN:-}" ]; then
+              PAGES_API_JSON=$(curl -fsSL --connect-timeout 5 --max-time 15 \
+                -H "Accept: application/vnd.github+json" \
+                -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+                -H "X-GitHub-Api-Version: 2022-11-28" \
+                "https://api.github.com/repos/${GH_REPO}/pages" 2>/dev/null || true)
+            fi
+            RESOLVED_LINES=$(PAGES_API_JSON="$PAGES_API_JSON" node scripts/build-pages-bundle.mjs --resolve-base-paths)
+            STORYBOOK_BASE=""
+            while IFS='=' read -r key val; do
+              case "$key" in
+                storybook_base_path) STORYBOOK_BASE="$val" ;;
+              esac
+            done <<< "$RESOLVED_LINES"
+          fi
+          echo "storybook_base=${STORYBOOK_BASE}" >> "$GITHUB_OUTPUT"
+
       - name: Cache Storybook Webpack build
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             node_modules/.cache/webpack
             node_modules/.cache/storybook
-          key: ${{ runner.os }}-storybook-${{ hashFiles('package-lock.json') }}-${{ hashFiles('.storybook/**', 'src/**/*.ts', 'src/**/*.tsx', 'src/**/*.css') }}
+          key: ${{ runner.os }}-storybook-${{ steps.base-path.outputs.storybook_base }}-${{ hashFiles('package-lock.json') }}-${{ hashFiles('.storybook/**', 'src/**/*.ts', 'src/**/*.tsx', 'src/**/*.css') }}
           restore-keys: |
-            ${{ runner.os }}-storybook-${{ hashFiles('package-lock.json') }}-
+            ${{ runner.os }}-storybook-${{ steps.base-path.outputs.storybook_base }}-${{ hashFiles('package-lock.json') }}-
 
       - name: Build Storybook Static Showcase
+        env:
+          NEXT_PUBLIC_BASE_PATH: ${{ steps.base-path.outputs.storybook_base }}
         run: npm run build-storybook
+
+      - name: Cache Playwright Chromium browser
+        id: playwright-chromium-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-chromium-${{ hashFiles('package-lock.json') }}
+
+      - name: Install Playwright Chromium Browser
+        if: steps.playwright-chromium-cache.outputs.cache-hit != 'true'
+        timeout-minutes: 5
+        run: npx playwright install --with-deps chromium
+
+      - name: Install Playwright Chromium OS Dependencies
+        if: steps.playwright-chromium-cache.outputs.cache-hit == 'true'
+        timeout-minutes: 5
+        run: npx playwright install-deps chromium
+
+      - name: Audit Storybook stories runtime and WCAG 2.2 AA accessibility
+        timeout-minutes: 10
+        env:
+          NEXT_PUBLIC_BASE_PATH: ${{ steps.base-path.outputs.storybook_base }}
+        run: npm run test:e2e:storybook
+
+      - name: Upload Storybook A11y Violations
+        if: always() && !cancelled()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: storybook-a11y-violations
+          path: test-results/storybook-a11y-violations.json
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Upload Storybook Playwright Traces
+        if: failure()
+        timeout-minutes: 3
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: playwright-storybook-traces
+          path: test-results/playwright-storybook/
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Generate and Verify Storybook Bundle Checksums
         run: |
@@ -56,10 +144,10 @@ jobs:
           path: storybook-static/
           if-no-files-found: error
           retention-days: 7
-
   attest-storybook:
     name: Attest Storybook Bundle Provenance
     needs: [build]
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -99,4 +187,3 @@ jobs:
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: /tmp/storybook-static/SHA256SUMS
-

@@ -435,7 +435,9 @@ function renderDarkContainerDeclarations(
       --color-status-success-text: ${tokens.statusSuccessText};
       --color-status-sent-text: ${tokens.statusSuccessText};
       --color-status-info-text: ${tokens.statusInfoText};
-      --color-status-not-needed-text: ${tokens.statusInfoText};`;
+      --color-status-not-needed-text: ${tokens.statusInfoText};
+      --color-foreground: #F9FAFB;
+      --foreground: #F9FAFB;`;
 }
 
 function buildShadeSelectors(shades: readonly string[]): string[] {
@@ -1204,6 +1206,8 @@ ${lightPresetCssRules}
       --color-status-sent-text: ${baseLightTokensCalibrated.statusSuccessText};
       --color-status-info-text: ${baseLightTokensCalibrated.statusInfoText};
       --color-status-not-needed-text: ${baseLightTokensCalibrated.statusInfoText};
+      --color-foreground: #111827;
+      --foreground: #111827;
       --floorplan-seat-assigned-text: ${seatAssignedTextLight};
       --floorplan-seat-dimmed-bg: ${lightPresetTokens['--floorplan-seat-dimmed-bg']};
       --floorplan-seat-dimmed-text: ${lightPresetTokens['--floorplan-seat-dimmed-text']};

@@ -86,8 +86,9 @@ describe('CsvImportWizardModal Component', () => {
   test('supports full keyboard accessibility with focus navigation and Enter/Space activation', () => {
     renderModal(true);
 
-    const dropzone = screen.getByRole('button', { name: /click to select csv file/i });
+    const dropzone = screen.getByText(/click to select csv file/i).closest('label')!;
     expect(dropzone).toBeInTheDocument();
+    expect(dropzone).not.toHaveAttribute('role');
     expect(dropzone).toHaveAttribute('tabIndex', '0');
     expect(dropzone).toHaveClass('focus-visible:ring-2');
     expect(dropzone).toHaveClass('focus-visible:ring-primary');

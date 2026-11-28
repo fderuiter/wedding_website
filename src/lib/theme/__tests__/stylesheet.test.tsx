@@ -289,6 +289,22 @@ describe('Isomorphic Theme Stylesheet Generation', () => {
         .getPropertyValue('--color-primary')
         .trim();
       expect(fillToken.toLowerCase()).toBe('#b91c1c');
+
+      // Dual light/dark containers (e.g. bg-white dark:bg-gray-800) reset --color-foreground in dark mode
+      const faqForeground = getComputedStyle(document.getElementById('faq-card')!)
+        .getPropertyValue('--color-foreground')
+        .trim();
+      const faqLegacyForeground = getComputedStyle(document.getElementById('faq-card')!)
+        .getPropertyValue('--foreground')
+        .trim();
+      expect(faqForeground.toLowerCase()).toBe('#f9fafb');
+      expect(faqLegacyForeground.toLowerCase()).toBe('#f9fafb');
+
+      document.documentElement.className = 'light';
+      const lightRootForeground = getComputedStyle(document.documentElement)
+        .getPropertyValue('--color-foreground')
+        .trim();
+      expect(lightRootForeground.toLowerCase()).toBe('#111827');
     } finally {
       host.remove();
       styleEl.remove();

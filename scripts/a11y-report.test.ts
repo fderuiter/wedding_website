@@ -20,6 +20,7 @@ import {
   generateReport,
   runA11yUnit,
   runA11yStatic,
+  runA11yStorybook,
   runA11ySuite,
   main,
 } from './a11y-report.mjs';
@@ -197,6 +198,57 @@ describe('a11y-report', () => {
       );
     });
 
+    it('includes Storybook Showcase section with story/theme scan counts and violation details when storybook-a11y-violations.json is present or --include-storybook is used', () => {
+      const resultsDir = path.join(tempDir, 'test-results');
+      fs.mkdirSync(resultsDir, { recursive: true });
+      fs.writeFileSync(path.join(resultsDir, 'jest-a11y-violations.json'), '[]');
+      fs.writeFileSync(path.join(resultsDir, 'playwright-a11y-violations.json'), '{}');
+      fs.writeFileSync(
+        path.join(resultsDir, 'storybook-a11y-violations.json'),
+        JSON.stringify({
+          '[light] admin-csvimportwizardmodal--default': [],
+          '[dark] admin-csvimportwizardmodal--default': [],
+          '[light] seating-floorplancanvas--default': [],
+          '[dark] seating-floorplancanvas--default': [],
+        })
+      );
+
+      const cleanResult = generateReport({ cwd: tempDir, requireStorybook: true });
+      expect(cleanResult.totalViolations).toBe(0);
+      expect(cleanResult.incompleteSuites).toEqual([]);
+      expect(cleanResult.report).toContain('### Storybook Showcase (Playwright Light & Dark)');
+      expect(cleanResult.report).toContain(
+        '✅ No accessibility violations found across 4 Storybook story/theme scans.'
+      );
+
+      fs.writeFileSync(
+        path.join(resultsDir, 'storybook-a11y-violations.json'),
+        JSON.stringify({
+          '[dark] admin-subeventeditormodal--create-mode': [
+            {
+              id: 'color-contrast',
+              description: 'Elements must meet minimum color contrast ratio thresholds',
+              impact: 'serious',
+            },
+          ],
+        })
+      );
+
+      const violationResult = generateReport({ cwd: tempDir, requireStorybook: true });
+      expect(violationResult.totalViolations).toBe(1);
+      expect(violationResult.report).toContain('❌ Found 1 violations in storybook showcase.');
+      expect(violationResult.report).toContain(
+        '- **color-contrast** (`[dark] admin-subeventeditormodal--create-mode`): Elements must meet minimum color contrast ratio thresholds (serious)'
+      );
+
+      fs.rmSync(path.join(resultsDir, 'storybook-a11y-violations.json'));
+      const missingStorybookResult = generateReport({ cwd: tempDir, requireStorybook: true });
+      expect(missingStorybookResult.incompleteSuites).toEqual(['storybook-showcase']);
+      expect(missingStorybookResult.report).toContain(
+        '**Status:** Incomplete (storybook-showcase results missing)'
+      );
+    });
+
     it('records parseErrors and writes incomplete summary without throwing when suite JSON files or violation structures are malformed', () => {
       const resultsDir = path.join(tempDir, 'test-results');
       fs.mkdirSync(resultsDir, { recursive: true });
@@ -360,6 +412,51 @@ describe('a11y-report', () => {
       const summary = fs.readFileSync(path.join(resultsDir, 'a11y-summary.md'), 'utf8');
       expect(summary).not.toContain('**Status:** Incomplete');
       expect(summary).toContain('**Total Accessibility Violations:** 0');
+    });
+
+    it('exits 0 with --include-static --include-storybook --require-complete when all four suite artifacts are present and clean, and exits 1 if storybook-a11y-violations.json is missing', () => {
+      const resultsDir = path.join(tempDir, 'test-results');
+      fs.mkdirSync(resultsDir, { recursive: true });
+      fs.writeFileSync(path.join(resultsDir, 'jest-a11y-violations.json'), '[]');
+      fs.writeFileSync(path.join(resultsDir, 'playwright-a11y-violations.json'), '{"/": []}');
+      fs.writeFileSync(
+        path.join(resultsDir, 'static-a11y-violations.json'),
+        '{"[light] /wedding_website/demo/": []}'
+      );
+      fs.writeFileSync(
+        path.join(resultsDir, 'storybook-a11y-violations.json'),
+        '{"[light] admin-csvimportwizardmodal--default": []}'
+      );
+
+      const cleanProc = spawnSync(
+        process.execPath,
+        [scriptPath, '--include-static', '--include-storybook', '--require-complete'],
+        {
+          cwd: tempDir,
+          encoding: 'utf8',
+        }
+      );
+
+      expect(cleanProc.status).toBe(0);
+      const cleanSummary = fs.readFileSync(path.join(resultsDir, 'a11y-summary.md'), 'utf8');
+      expect(cleanSummary).toContain('### Storybook Showcase (Playwright Light & Dark)');
+      expect(cleanSummary).not.toContain('**Status:** Incomplete');
+      expect(cleanSummary).toContain('**Total Accessibility Violations:** 0');
+
+      fs.rmSync(path.join(resultsDir, 'storybook-a11y-violations.json'));
+      const missingProc = spawnSync(
+        process.execPath,
+        [scriptPath, '--include-static', '--include-storybook', '--require-complete'],
+        {
+          cwd: tempDir,
+          encoding: 'utf8',
+        }
+      );
+      expect(missingProc.status).toBe(1);
+      const missingSummary = fs.readFileSync(path.join(resultsDir, 'a11y-summary.md'), 'utf8');
+      expect(missingSummary).toContain(
+        '**Status:** Incomplete (storybook-showcase results missing)'
+      );
     });
 
     it.each([
@@ -851,6 +948,65 @@ describe('a11y-report', () => {
       ]);
       const summary = fs.readFileSync(path.join(tempDir, 'test-results', 'a11y-summary.md'), 'utf8');
       expect(summary).toContain('### Static Showcase (Playwright Light & Dark)');
+      expect(summary).not.toContain('**Status:** Incomplete');
+      expect(summary).toContain('**Total Accessibility Violations:** 0');
+    });
+  });
+
+  describe('runA11yStorybook', () => {
+    it('builds Storybook when storybook-static/index.html is missing, runs playwright.storybook.config.ts, and writes standalone summary', () => {
+      const invoked: Array<{
+        cmd: string;
+        args: string[];
+        env?: Record<string, string | undefined>;
+      }> = [];
+      const exitCode = runA11yStorybook({
+        cwd: tempDir,
+        basePath: '/wedding_website/storybook',
+        runStep: (
+          cmd: string,
+          args: string[],
+          cwd: string,
+          envOverrides?: Record<string, string | undefined>
+        ) => {
+          invoked.push({ cmd, args, env: envOverrides });
+          if (cmd === 'npm' && args[1] === 'build-storybook') {
+            fs.mkdirSync(path.join(cwd, 'storybook-static'), { recursive: true });
+            fs.writeFileSync(path.join(cwd, 'storybook-static', 'index.html'), '<!doctype html>');
+          } else if (cmd === 'npx' && args[0] === 'playwright') {
+            const dir = path.join(cwd, 'test-results');
+            fs.mkdirSync(dir, { recursive: true });
+            fs.writeFileSync(
+              path.join(dir, 'storybook-a11y-violations.json'),
+              JSON.stringify({
+                '[light] admin-csvimportwizardmodal--default': [],
+                '[dark] admin-csvimportwizardmodal--default': [],
+              })
+            );
+          }
+          return 0;
+        },
+      });
+
+      expect(exitCode).toBe(0);
+      expect(invoked).toEqual([
+        {
+          cmd: 'npm',
+          args: ['run', 'build-storybook'],
+          env: { NEXT_PUBLIC_BASE_PATH: '/wedding_website/storybook' },
+        },
+        {
+          cmd: 'npx',
+          args: ['playwright', 'test', '-c', 'playwright.storybook.config.ts'],
+          env: { NEXT_PUBLIC_BASE_PATH: '/wedding_website/storybook' },
+        },
+      ]);
+      const summary = fs.readFileSync(path.join(tempDir, 'test-results', 'a11y-summary.md'), 'utf8');
+      expect(summary).toContain('### Storybook Showcase (Playwright Light & Dark)');
+      expect(summary).toContain(
+        '✅ No accessibility violations found across 2 Storybook story/theme scans.'
+      );
+      expect(summary).not.toContain('### Component Level (Jest)');
       expect(summary).not.toContain('**Status:** Incomplete');
       expect(summary).toContain('**Total Accessibility Violations:** 0');
     });

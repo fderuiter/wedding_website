@@ -1064,6 +1064,15 @@ describe('verify-deployment-runbooks', () => {
       fs
         .readFileSync(storybookWorkflowPath, 'utf8')
         .replace('node_modules/.cache/storybook\n', '')
+        .replace(/steps\.base-path\.outputs\.storybook_base/g, 'static-key')
+    );
+
+    const ciWorkflowPath = path.join(tempDir, '.github/workflows/ci.yml');
+    fs.writeFileSync(
+      ciWorkflowPath,
+      fs
+        .readFileSync(ciWorkflowPath, 'utf8')
+        .replace('uses: ./.github/workflows/storybook.yml', 'uses: ./.github/workflows/other.yml')
     );
 
     const errors = verifyDeploymentRunbooks(tempDir);
@@ -1088,7 +1097,13 @@ describe('verify-deployment-runbooks', () => {
           'docs/deployment/gcp-cloud-run.md: Must document `release_ref` and `target_sha` commit resolution'
         ),
         expect.stringContaining(
+          '.github/workflows/ci.yml: `storybook-build` job must delegate to reusable workflow `./.github/workflows/storybook.yml`'
+        ),
+        expect.stringContaining(
           '.github/workflows/storybook.yml: `actions/cache` must cache "node_modules/.cache/storybook"'
+        ),
+        expect.stringContaining(
+          '.github/workflows/storybook.yml: `actions/cache` `key` and `restore-keys` must include `steps.base-path.outputs.storybook_base` and lockfile/.storybook hash'
         ),
       ])
     );
