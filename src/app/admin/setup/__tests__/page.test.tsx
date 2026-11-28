@@ -129,6 +129,7 @@ describe('AdminSetupPage (/admin/setup)', () => {
         partner1Name: 'Alex',
         partner2Name: 'Sam',
         weddingDate: '2027-06-20',
+        ceremonyTime: '11:00',
         timezone: 'America/Chicago',
         baseUrl: 'https://alexandsam.example.org',
         venueName: '',
@@ -143,6 +144,42 @@ describe('AdminSetupPage (/admin/setup)', () => {
         colorPrimary: '#be123c',
         colorSecondary: '#14532d',
       },
+    });
+  });
+
+  it('hydrates evening America/Los_Angeles ceremony timestamps without advancing weddingDate to the next UTC day', async () => {
+    (getAppConfig as jest.Mock).mockResolvedValue({
+      id: 'global',
+      partner1Name: 'Alex',
+      partner2Name: 'Sam',
+      brideName: 'Alex',
+      groomName: 'Sam',
+      baseUrl: 'https://alexandsam.example.org',
+      weddingDate: new Date('2027-06-21T02:30:00.000Z'),
+      timezone: 'America/Los_Angeles',
+      venueName: 'Sunset Cliff Estate',
+      venueCity: 'Malibu',
+      venueState: 'CA',
+      venueAddress: '100 Pacific Coast Hwy',
+      venueZip: '90265',
+      latitude: 34.0259,
+      longitude: -118.7798,
+      contactEmail: 'hosts@alexandsam.example.org',
+      themePreset: 'romantic',
+      colorPrimary: '#be123c',
+      colorSecondary: '#14532d',
+      setupCompleted: false,
+    });
+
+    const element = await AdminSetupPage();
+    render(element);
+
+    expect(mockSetupWizard).toHaveBeenCalledWith({
+      initialSavedConfig: expect.objectContaining({
+        weddingDate: '2027-06-20',
+        ceremonyTime: '19:30',
+        timezone: 'America/Los_Angeles',
+      }),
     });
   });
 

@@ -15,6 +15,10 @@ import BackToTop from '@/components/BackToTop';
 import { Interactive3DCard } from '@/components/ui/Interactive3DCard';
 import { formatDate } from '@/utils/intl';
 import { formatScheduleEventToCalendarEvent } from '@/utils/calendar';
+import {
+  formatVenueWeddingDate,
+  normalizeVenueWeddingDate,
+} from '@/utils/venueDateTime';
 import Countdown from '@/components/Countdown';
 import AddToCalendar from '@/components/AddToCalendar';
 import InteractiveTimeline from '@/components/schedule/InteractiveTimeline';
@@ -222,22 +226,14 @@ export default function HomePageClient({
     }
   }, [contentNodes.length, isAdminPreview]);
 
-  let formattedDate: string;
-  try {
-    formattedDate = formatDate(config.weddingDate, {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-      timeZone: config.timezone || 'UTC',
-    });
-  } catch {
-    formattedDate = formatDate(config.weddingDate, {
+  const formattedDate =
+    formatVenueWeddingDate(config.weddingDate, config.timezone) ||
+    formatDate(config.weddingDate, {
       year: 'numeric',
       month: 'long',
       day: 'numeric',
       timeZone: 'UTC',
     });
-  }
 
   const visibleFaqNodes = useMemo(
     () =>
@@ -584,7 +580,9 @@ export default function HomePageClient({
     }
   };
 
-  const weddingDateObj = new Date(config.weddingDate);
+  const weddingDateObj =
+    normalizeVenueWeddingDate(config.weddingDate, config.timezone) ??
+    new Date(config.weddingDate);
   const hasValidWeddingDate = !isNaN(weddingDateObj.getTime());
   const calendarEvent = formatScheduleEventToCalendarEvent(
     {
@@ -644,7 +642,14 @@ export default function HomePageClient({
               </motion.p>
               {config.showCountdown && isFeatureEnabled('countdown', config.modules) && (
                 <motion.div className="mb-8 text-2xl font-semibold text-primary" variants={fadeUp} initial="hidden" animate="visible" custom={2}>
-                  <Countdown targetDate={weddingDateObj.toISOString()} />
+                  <Countdown
+                    targetDate={
+                      hasValidWeddingDate
+                        ? weddingDateObj.toISOString()
+                        : String(config.weddingDate)
+                    }
+                    timeZone={config.timezone}
+                  />
                 </motion.div>
               )}
               <motion.nav aria-label="Primary navigation" role="navigation" className="flex flex-col items-center gap-3 sm:flex-row sm:gap-6" variants={fadeUp} initial="hidden" animate="visible" custom={3}>

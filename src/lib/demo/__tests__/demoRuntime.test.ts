@@ -1394,7 +1394,7 @@ describe('demoSeed, demoStore, and demoApiHandler runtime', () => {
       expect(classicRes.status).toBe(200);
       const classicForecast = await classicRes.json();
       expect(classicForecast.isLiveForecast).toBe(false);
-      expect(classicForecast.liveForecastAvailableDate).toBe('2026-09-02');
+      expect(classicForecast.liveForecastAvailableDate).toBe('2026-09-03');
       expect(classicForecast.daily.time).toEqual(['2026-09-19']);
       expect(classicForecast.daily.temperature_2m_max[0]).toBe(82);
 

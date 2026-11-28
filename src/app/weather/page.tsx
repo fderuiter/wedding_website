@@ -4,7 +4,7 @@ import { Forecast } from '@/features/weather';
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 import { getAppConfig } from '@/lib/config';
 import { isFeatureEnabled } from '@/lib/modules';
-import { formatDate } from '@/utils/intl';
+import { formatVenueWeddingDate } from '@/utils/venueDateTime';
 import { enforceActiveGuestPageSession } from '@/core/auth/guestInviteSession';
 
 export const metadata: Metadata = {
@@ -25,10 +25,8 @@ export default async function WeatherPage() {
     notFound();
   }
 
-  const hasValidWeddingDate = Boolean(
-    config.weddingDate && !isNaN(new Date(config.weddingDate).getTime())
-  );
-  const formattedDate = hasValidWeddingDate ? formatDate(config.weddingDate) : null;
+  const formattedDate =
+    formatVenueWeddingDate(config.weddingDate, config.timezone) || null;
 
   return (
     <div className="container mx-auto px-4 py-12 sm:py-16 md:py-20">

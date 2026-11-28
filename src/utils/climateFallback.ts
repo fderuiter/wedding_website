@@ -1,30 +1,46 @@
 import { hasValidCoordinates } from '@/utils/maps';
+import {
+  isValidDateOnly,
+  normalizeVenueWeddingDate,
+  resolveVenueTimezone,
+  subtractCalendarDays,
+} from '@/utils/venueDateTime';
 
 export const TEMPERATE_DEFAULT_LAT = 40.7128;
 export const TEMPERATE_DEFAULT_LON = -74.006;
 
-export function formatForecastDateInTimezone(date: Date, timezone: string): string {
+export function formatForecastDateInTimezone(
+  date: Date | string,
+  timezone: string
+): string {
+  const validTimezone = resolveVenueTimezone(timezone);
+  const normalized =
+    normalizeVenueWeddingDate(date, validTimezone) ??
+    (date instanceof Date ? date : new Date(date));
+
   try {
     const formatter = new Intl.DateTimeFormat('en-CA', {
-      timeZone: timezone || 'UTC',
+      timeZone: validTimezone,
       year: 'numeric',
       month: '2-digit',
       day: '2-digit',
     });
-    return formatter.format(date);
+    return formatter.format(normalized);
   } catch {
-    return date.toISOString().split('T')[0];
+    return normalized.toISOString().split('T')[0];
   }
 }
 
 export function computeLiveForecastAvailableDate(
   weddingDayStr: string,
-  timezone: string
+  timezone: string = 'UTC'
 ): string {
-  const parsedWeddingMs = Date.parse(`${weddingDayStr}T00:00:00Z`);
-  const safeWeddingMs = Number.isFinite(parsedWeddingMs) ? parsedWeddingMs : Date.now();
-  const availableDateMs = safeWeddingMs - 16 * 24 * 60 * 60 * 1000;
-  return formatForecastDateInTimezone(new Date(availableDateMs), timezone);
+  const trimmed = typeof weddingDayStr === 'string' ? weddingDayStr.trim() : '';
+  if (isValidDateOnly(trimmed)) {
+    return subtractCalendarDays(trimmed, 16);
+  }
+  const fallbackDay = formatForecastDateInTimezone(new Date(), timezone);
+  return subtractCalendarDays(fallbackDay, 16);
 }
 
 interface MonthlyClimateStats {

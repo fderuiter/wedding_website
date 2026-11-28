@@ -5,6 +5,7 @@ import { isAdminRequest } from '@/core/auth/auth.server';
 import { isGuestRequest } from '@/core/auth/guest.server';
 import { getGuestInviteSession } from '@/core/auth/guestInviteSession';
 import { getServerExportTokens } from '@/lib/theme/presets';
+import { formatVenueWeddingDate } from '@/utils/venueDateTime';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { readFile } from 'fs/promises';
 import path from 'path';
@@ -122,14 +123,7 @@ export const GET = withApiMiddleware(async (request: NextRequest) => {
 
   let dateStr = '';
   if (isAuthenticated && config?.weddingDate) {
-    try {
-      const d = new Date(config.weddingDate);
-      if (!isNaN(d.getTime())) {
-        dateStr = d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
-      }
-    } catch {
-      // ignore
-    }
+    dateStr = formatVenueWeddingDate(config.weddingDate, config.timezone);
   }
 
   const venueParts = isAuthenticated

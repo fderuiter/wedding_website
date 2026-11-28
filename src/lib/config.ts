@@ -19,6 +19,7 @@ import {
   evaluateRsvpCutoff,
   sanitizeRsvpClosedMessage,
 } from '../utils/rsvpDeadline';
+import { normalizeVenueWeddingDate } from '../utils/venueDateTime';
 import { isOutboundMessagingActive } from '../utils/guestSignInRecovery';
 import { headers } from 'next/headers';
 
@@ -227,7 +228,11 @@ function getEnvConfigOverrides(): Partial<LocalAppConfig> {
 
   const siteWeddingDate = readNonEmptySiteEnv(process.env.SITE_WEDDING_DATE);
   if (siteWeddingDate !== undefined) {
-    overrides.weddingDate = new Date(siteWeddingDate);
+    const provisionalTimezone =
+      readNonEmptySiteEnv(process.env.SITE_TIMEZONE) ?? APP_DEFAULTS.timezone;
+    overrides.weddingDate =
+      normalizeVenueWeddingDate(siteWeddingDate, provisionalTimezone) ??
+      new Date(siteWeddingDate);
   }
 
   const siteBaseUrl = readNonEmptySiteEnv(process.env.SITE_BASE_URL);
@@ -982,6 +987,18 @@ async function resolveAppConfig(idOrSubdomain?: string): Promise<AppConfigDTO> {
     themeTokens: mergedThemeTokens,
   };
 
+  const rawSiteWeddingDate = readNonEmptySiteEnv(process.env.SITE_WEDDING_DATE);
+  const resolvedWeddingDate =
+    rawSiteWeddingDate !== undefined
+      ? (normalizeVenueWeddingDate(
+        rawSiteWeddingDate,
+        mergedConfig.timezone,
+      ) ?? new Date(rawSiteWeddingDate))
+      : (normalizeVenueWeddingDate(
+        mergedConfig.weddingDate,
+        mergedConfig.timezone,
+      ) ?? mergedConfig.weddingDate);
+
   const partner1Name =
     (typeof mergedConfig.partner1Name === 'string' && mergedConfig.partner1Name) ||
     (typeof mergedConfig.brideName === 'string' && mergedConfig.brideName) ||
@@ -994,6 +1011,7 @@ async function resolveAppConfig(idOrSubdomain?: string): Promise<AppConfigDTO> {
   try {
     return AppConfigSchema.parse({
       ...mergedConfig,
+      weddingDate: resolvedWeddingDate,
       partner1Name,
       partner2Name,
       brideName: partner1Name,

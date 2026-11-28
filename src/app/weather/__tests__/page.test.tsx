@@ -53,4 +53,25 @@ describe('WeatherPage', () => {
     expect(screen.getByRole('heading', { level: 1, name: /the forecast for our big day/i })).toBeInTheDocument();
     expect(screen.queryByText(/June 20, 2026/i)).not.toBeInTheDocument();
   });
+
+  it('renders June 20, 2027 for both legacy UTC-midnight rows and evening America/Los_Angeles ceremonies', async () => {
+    (getAppConfig as jest.Mock).mockResolvedValueOnce({
+      modules: { weather: true },
+      weddingDate: new Date('2027-06-20T00:00:00.000Z'),
+      timezone: 'America/Chicago',
+    });
+    const chicagoPage = await WeatherPage();
+    const { unmount } = render(chicagoPage);
+    expect(screen.getByText('June 20, 2027')).toBeInTheDocument();
+    unmount();
+
+    (getAppConfig as jest.Mock).mockResolvedValueOnce({
+      modules: { weather: true },
+      weddingDate: new Date('2027-06-21T02:30:00.000Z'),
+      timezone: 'America/Los_Angeles',
+    });
+    const laPage = await WeatherPage();
+    render(laPage);
+    expect(screen.getByText('June 20, 2027')).toBeInTheDocument();
+  });
 });

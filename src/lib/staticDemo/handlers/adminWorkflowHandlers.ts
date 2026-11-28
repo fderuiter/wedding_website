@@ -53,6 +53,7 @@ import {
   toRegistryItemDto,
 } from '../dtoMappers';
 import { splitMemberFullName } from '@/utils/invitationValidation';
+import { normalizeVenueWeddingDate } from '@/utils/venueDateTime';
 import {
   sanitizeDemoVersionData,
   shouldIncludeSnapshotData,
@@ -277,7 +278,7 @@ export async function handleAdminWorkflowRoutes(
         config.partner2Name = partner2Name;
         config.brideName = partner1Name;
         config.groomName = partner2Name;
-        const resolvedWeddingDate =
+        const rawWeddingDate =
           typeof body.weddingDate === 'string' && body.weddingDate.trim()
             ? body.weddingDate.trim()
             : config.weddingDate;
@@ -285,6 +286,14 @@ export async function handleAdminWorkflowRoutes(
           typeof body.timezone === 'string' && body.timezone.trim()
             ? body.timezone.trim()
             : config.timezone;
+        const normalizedSetupInstant = normalizeVenueWeddingDate(
+          rawWeddingDate,
+          resolvedTimezone,
+          typeof body.ceremonyTime === 'string' ? body.ceremonyTime : undefined,
+        );
+        const resolvedWeddingDate = normalizedSetupInstant
+          ? normalizedSetupInstant.toISOString()
+          : rawWeddingDate;
         const cleanedVenueName =
           body.venueName !== undefined
             ? cleanOptionalSetupText(body.venueName)
@@ -888,6 +897,19 @@ export async function handleAdminWorkflowRoutes(
         for (const key of editableStringFields) {
           if (typeof body[key] === 'string') {
             configMap[key] = body[key];
+          }
+        }
+        if (
+          typeof body.weddingDate === 'string' ||
+          typeof body.ceremonyTime === 'string'
+        ) {
+          const normalizedSettingsInstant = normalizeVenueWeddingDate(
+            config.weddingDate,
+            config.timezone,
+            typeof body.ceremonyTime === 'string' ? body.ceremonyTime : undefined,
+          );
+          if (normalizedSettingsInstant) {
+            config.weddingDate = normalizedSettingsInstant.toISOString();
           }
         }
         if (typeof body.latitude === 'number') config.latitude = body.latitude;

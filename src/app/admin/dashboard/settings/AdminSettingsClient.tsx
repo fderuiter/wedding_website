@@ -29,6 +29,12 @@ import {
   DEFAULT_RSVP_CLOSED_MESSAGE,
   RSVP_GRACE_PERIOD_HOURS_OPTIONS,
 } from '@/utils/rsvpDeadline';
+import {
+  DEFAULT_CEREMONY_TIME,
+  extractVenueDateAndTime,
+  formatVenueCeremonyConfirmation,
+  normalizeVenueWeddingDate,
+} from '@/utils/venueDateTime';
 
 interface ThemeOverrideRow {
   id: string;
@@ -54,6 +60,7 @@ interface SettingsDraftConfig {
   brideName?: string;
   groomName?: string;
   weddingDate?: string;
+  ceremonyTime?: string;
   baseUrl?: string;
   contactEmail?: string;
   photoAlbumUrl?: string;
@@ -211,6 +218,9 @@ function normalizeComparableConfigValue(config: SettingsDraftConfig, key: string
   }
   if (key === 'partner2Name' || key === 'groomName') {
     return config.partner2Name ?? config.groomName ?? '';
+  }
+  if (key === 'ceremonyTime') {
+    return config.ceremonyTime ?? DEFAULT_CEREMONY_TIME;
   }
   const val = config[key];
   return val === undefined || val === null ? '' : val;
@@ -483,13 +493,22 @@ export default function AdminSettingsPage() {
         themeTokens: payloadThemeTokens,
       };
       const saved = (await saveSettings(payloadToSave)) as Partial<SettingsDraftConfig> | null;
+      const savedDateTime =
+        saved && typeof saved === 'object' && saved.weddingDate
+          ? extractVenueDateAndTime(
+            String(saved.weddingDate),
+            String(saved.timezone || localConfig?.timezone || 'UTC'),
+          )
+          : null;
       const nextSavedConfig: SettingsDraftConfig = {
         ...localConfig,
         ...(saved && typeof saved === 'object' ? saved : {}),
-        weddingDate:
-          saved && typeof saved === 'object' && saved.weddingDate
-            ? String(saved.weddingDate).split('T')[0]
-            : localConfig?.weddingDate,
+        weddingDate: savedDateTime
+          ? savedDateTime.date
+          : localConfig?.weddingDate,
+        ceremonyTime: savedDateTime
+          ? savedDateTime.time
+          : (localConfig?.ceremonyTime ?? DEFAULT_CEREMONY_TIME),
         smtpPass: '',
         resendApiKey: '',
         sendgridApiKey: '',
@@ -596,6 +615,19 @@ export default function AdminSettingsPage() {
   };
 
   const isMultisite = Boolean(localConfig?.multisiteEnabled);
+  const ceremonyConfirmation = formatVenueCeremonyConfirmation(
+    localConfig?.weddingDate,
+    localConfig?.ceremonyTime,
+    localConfig?.timezone || 'America/Chicago',
+  );
+  const draftPreviewWeddingDateIso =
+    (localConfig?.weddingDate
+      ? normalizeVenueWeddingDate(
+        localConfig.weddingDate,
+        localConfig.timezone || 'America/Chicago',
+        localConfig.ceremonyTime,
+      )?.toISOString()
+      : undefined) ?? new Date().toISOString();
 
   return (
     <AdminViewState
@@ -623,7 +655,7 @@ export default function AdminSettingsPage() {
             shippingCountry: undefined,
             shippingPhone: undefined,
             shippingDeliveryNotes: undefined,
-            weddingDate: localConfig.weddingDate ? new Date(localConfig.weddingDate).toISOString() : new Date().toISOString()
+            weddingDate: draftPreviewWeddingDateIso,
           }}
           entityId={selectedProfileId}
           onRestore={() => {
@@ -698,6 +730,34 @@ export default function AdminSettingsPage() {
                     <Label>Wedding Date</Label>
                     <Input required type="date" name="weddingDate" value={localConfig.weddingDate || ''} onChange={handleChange} />
                   </FormGroup>
+                  <FormGroup>
+                    <Label>Ceremony Start Time (Optional)</Label>
+                    <Input
+                      type="time"
+                      name="ceremonyTime"
+                      value={localConfig.ceremonyTime ?? DEFAULT_CEREMONY_TIME}
+                      onChange={handleChange}
+                    />
+                    <FormMessage>Defaults to 4:00 PM in the venue timezone if left blank.</FormMessage>
+                  </FormGroup>
+                  <FormGroup className="md:col-span-2">
+                    <Label>Venue Timezone</Label>
+                    <SearchableTimezoneSelect
+                      value={localConfig.timezone || ''}
+                      onChange={(val) => setLocalConfig((prev) => ({ ...(prev ?? {}), timezone: val }))}
+                    />
+                  </FormGroup>
+                  {ceremonyConfirmation && (
+                    <div className="md:col-span-2">
+                      <p
+                        data-testid="settings-ceremony-confirmation"
+                        aria-live="polite"
+                        className="text-sm font-medium text-gray-700 dark:text-gray-200 bg-gray-50 dark:bg-zinc-800/70 border border-gray-200 dark:border-zinc-700 rounded-lg px-3 py-2"
+                      >
+                        Ceremony scheduled for {ceremonyConfirmation}
+                      </p>
+                    </div>
+                  )}
                   <FormGroup>
                     <Label>Base URL</Label>
                     <Input required type="url" name="baseUrl" value={localConfig.baseUrl || ''} onChange={handleChange} />
@@ -790,13 +850,6 @@ export default function AdminSettingsPage() {
                   <FormGroup>
                     <Label>Zip Code</Label>
                     <Input type="text" name="venueZip" value={localConfig.venueZip || ''} onChange={handleChange} />
-                  </FormGroup>
-                  <FormGroup>
-                    <Label>Venue Timezone</Label>
-                    <SearchableTimezoneSelect
-                      value={localConfig.timezone || ''}
-                      onChange={(val) => setLocalConfig((prev) => ({ ...(prev ?? {}), timezone: val }))}
-                    />
                   </FormGroup>
                 </div>
                 <details className="mt-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50/60 dark:bg-gray-900/40 p-3">
