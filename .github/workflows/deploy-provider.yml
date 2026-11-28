@@ -545,36 +545,16 @@ jobs:
           REPO_OWNER: ${{ github.repository_owner }}
           SIGNER_WORKFLOW: ${{ github.repository }}/.github/workflows/publish-artifact.yml
         run: |
-          GIT_AUTH_ARGS=()
-          ORIGIN_URL=$(git remote get-url origin 2>/dev/null || true)
           EFFECTIVE_GIT_TOKEN="${GH_TOKEN:-${GITHUB_TOKEN:-}}"
-          if [ -n "$EFFECTIVE_GIT_TOKEN" ] && [[ "$ORIGIN_URL" =~ ^https?://[^/]+ ]]; then
-            ORIGIN_SERVER="${BASH_REMATCH[0]}"
-            BASIC_TOKEN=$(printf 'x-access-token:%s' "$EFFECTIVE_GIT_TOKEN" | base64 | tr -d '\r\n')
-            GIT_AUTH_ARGS=(-c "http.${ORIGIN_SERVER}/.extraheader=AUTHORIZATION: basic ${BASIC_TOKEN}")
-          fi
+          VERIFY_ARGS=(--image-uri "$IMAGE_URI")
 
-          if git remote get-url origin >/dev/null 2>&1; then
-            if [ "$(git rev-parse --is-shallow-repository 2>/dev/null || echo false)" = "true" ]; then
-              git "${GIT_AUTH_ARGS[@]}" fetch --unshallow --tags origin +refs/heads/main:refs/remotes/origin/main
-            else
-              git "${GIT_AUTH_ARGS[@]}" fetch --tags origin +refs/heads/main:refs/remotes/origin/main
-            fi
-          fi
-
-          if ! git show-ref --verify --quiet refs/remotes/origin/main; then
-            echo "::error::Missing refs/remotes/origin/main reference required to verify main branch ancestry."
-            exit 1
-          fi
-
-          TARGET_SHA=""
           if [[ "${RAW_TAG:-}" =~ ^[a-fA-F0-9]{40}$ ]]; then
-            TARGET_SHA="$RAW_TAG"
+            VERIFY_ARGS+=(--target-sha "$RAW_TAG")
+          elif [[ "${RAW_TAG:-}" =~ ^v[0-9][a-zA-Z0-9_.-]*$ ]]; then
+            VERIFY_ARGS+=(--release-tag "$RAW_TAG")
           elif [ -n "${RAW_TAG:-}" ]; then
-            if ! TARGET_SHA=$(git rev-parse --verify "${RAW_TAG}^{commit}" 2>/dev/null); then
-              echo "::error::Unable to resolve image_tag '${RAW_TAG}' to a repository commit SHA for CI and migration verification."
-              exit 1
-            fi
+            echo "::error::Unable to resolve image_tag '${RAW_TAG}' to an immutable v* release tag or 40-character commit SHA for CI and migration verification."
+            exit 1
           else
             ATTESTATION_JSON=$(gh attestation verify "oci://${IMAGE_URI}" \
               --owner "$REPO_OWNER" \
@@ -595,96 +575,84 @@ jobs:
               RAW_INDEX_JSON=$(docker buildx imagetools inspect --raw "$IMAGE_URI" 2>/dev/null || true)
             fi
 
-            if [ -f ./scripts/resolve-oci-provenance.sh ]; then
-              if ! PROVENANCE_ROW=$(ATTESTATION_JSON="$ATTESTATION_JSON" RAW_MANIFEST_JSON="$RAW_INDEX_JSON" bash ./scripts/resolve-oci-provenance.sh --image-label "$IMAGE_URI"); then
-                echo "::error::Blocking standalone promotion due to conflicting OCI/SLSA provenance metadata on '${IMAGE_URI}'."
-                exit 1
-              fi
-              IFS='|' read -r TARGET_SHA _ _ _ <<< "$PROVENANCE_ROW"
-            else
-              INDEX_REVISION=""
-              if [[ "${RAW_INDEX_JSON#"${RAW_INDEX_JSON%%[![:space:]]*}"}" == \{* ]]; then
-                INDEX_REVISION=$(printf '%s' "$RAW_INDEX_JSON" | jq -r '
-                  (
-                    .annotations["org.opencontainers.image.revision"]
-                    // .config.Labels["org.opencontainers.image.revision"]
-                    // ([.manifests[]?.annotations["org.opencontainers.image.revision"] | select(type == "string" and test("^[a-fA-F0-9]{40}$"))][0])
-                    // empty
-                  )
-                ' 2>/dev/null | tr '[:upper:]' '[:lower:]' || true)
-                if [[ ! "$INDEX_REVISION" =~ ^[a-f0-9]{40}$ ]]; then
-                  INDEX_REVISION=""
-                fi
-              fi
-
-              SLSA_INPUT_REVISION=$(printf '%s' "$ATTESTATION_JSON" | jq -r '
-                [
-                  (if type == "array" then .[] else . end)
-                  | (.verificationResult.statement.predicate // .statement.predicate // .predicate // empty)
-                  | .buildDefinition.externalParameters.inputs.commit_sha
-                  | select(type == "string" and test("^[a-fA-F0-9]{40}$"))
-                ][0] // empty
-              ' 2>/dev/null | tr '[:upper:]' '[:lower:]' || true)
-              if [[ ! "$SLSA_INPUT_REVISION" =~ ^[a-f0-9]{40}$ ]]; then
-                SLSA_INPUT_REVISION=""
-              fi
-
-              if [ -n "$INDEX_REVISION" ] && [ -n "$SLSA_INPUT_REVISION" ] && [ "$INDEX_REVISION" != "$SLSA_INPUT_REVISION" ]; then
-                echo "::error::Attested OCI index revision '${INDEX_REVISION}' conflicts with SLSA input commit_sha '${SLSA_INPUT_REVISION}' for '${IMAGE_URI}'. Blocking standalone promotion."
-                exit 1
-              fi
-
-              SLSA_REVISION=$(printf '%s' "$ATTESTATION_JSON" | jq -r '
-                [
-                  (if type == "array" then .[] else . end)
-                  | (
-                      .verificationResult.statement.subject[]?.annotations["org.opencontainers.image.revision"],
-                      .statement.subject[]?.annotations["org.opencontainers.image.revision"],
-                      ((.verificationResult.statement.predicate // .statement.predicate // .predicate // empty) | .buildDefinition.externalParameters.inputs.commit_sha),
-                      .verificationResult.signature.certificate.sourceRepositoryDigest,
-                      ((.verificationResult.statement.predicate // .statement.predicate // .predicate // empty) | (
-                        (.buildDefinition.resolvedDependencies[]? | (.digest.gitCommit, .digest.sha1)),
-                        .buildDefinition.internalParameters.github.sha,
-                        .invocation.configSource.digest.sha1,
-                        (.materials[]? | (.digest.gitCommit, .digest.sha1))
-                      ))
-                    )
-                  | select(type == "string" and test("^[a-fA-F0-9]{40}$"))
-                ][0] // empty
-              ' 2>/dev/null | tr '[:upper:]' '[:lower:]' || true)
-              if [[ ! "$SLSA_REVISION" =~ ^[a-f0-9]{40}$ ]]; then
-                SLSA_REVISION=""
-              fi
-
-              TARGET_SHA="${INDEX_REVISION:-${SLSA_REVISION}}"
+            if ! PROVENANCE_ROW=$(ATTESTATION_JSON="$ATTESTATION_JSON" RAW_MANIFEST_JSON="$RAW_INDEX_JSON" bash ./scripts/resolve-oci-provenance.sh --image-label "$IMAGE_URI"); then
+              echo "::error::Blocking standalone promotion due to conflicting OCI/SLSA provenance metadata on '${IMAGE_URI}'."
+              exit 1
             fi
+            IFS='|' read -r RESOLVED_PROVENANCE_SHA _ _ _ <<< "$PROVENANCE_ROW"
+            if [[ ! "$RESOLVED_PROVENANCE_SHA" =~ ^[a-fA-F0-9]{40}$ ]]; then
+              echo "::error::Failed to resolve valid 40-character commit SHA for standalone promotion (got '${RESOLVED_PROVENANCE_SHA}')."
+              exit 1
+            fi
+            VERIFY_ARGS+=(--target-sha "$RESOLVED_PROVENANCE_SHA")
           fi
 
-          if [[ ! "$TARGET_SHA" =~ ^[a-fA-F0-9]{40}$ ]]; then
-            echo "::error::Failed to resolve valid 40-character commit SHA for standalone promotion (got '${TARGET_SHA}')."
-            exit 1
-          fi
+          VERIFIED_ROW=$(bash ./scripts/verify-release-target.sh "${VERIFY_ARGS[@]}")
+          IFS='|' read -r TARGET_SHA_LOWER VERIFICATION_SOURCE MATCHED_TAG VERIFIED_CI_RUN_ID <<< "$VERIFIED_ROW"
 
-          if ! git cat-file -e "${TARGET_SHA}^{commit}" 2>/dev/null; then
+          if ! git rev-parse --verify "${TARGET_SHA_LOWER}^1" >/dev/null 2>&1; then
             if git remote get-url origin >/dev/null 2>&1; then
-              git "${GIT_AUTH_ARGS[@]}" fetch --no-tags origin "$TARGET_SHA" || true
+              GIT_AUTH_ARGS=()
+              ORIGIN_URL=$(git remote get-url origin 2>/dev/null || true)
+              if [ -n "$EFFECTIVE_GIT_TOKEN" ] && [[ "$ORIGIN_URL" =~ ^https?://[^/]+ ]]; then
+                ORIGIN_SERVER="${BASH_REMATCH[0]}"
+                BASIC_TOKEN=$(printf 'x-access-token:%s' "$EFFECTIVE_GIT_TOKEN" | base64 | tr -d '\r\n')
+                GIT_AUTH_ARGS=(-c "http.${ORIGIN_SERVER}/.extraheader=AUTHORIZATION: basic ${BASIC_TOKEN}")
+              fi
+              git "${GIT_AUTH_ARGS[@]}" fetch --no-tags --depth=2 origin "$TARGET_SHA_LOWER" 2>/dev/null || true
             fi
           fi
 
-          if ! git cat-file -e "${TARGET_SHA}^{commit}" 2>/dev/null; then
-            echo "::error::Commit '${TARGET_SHA}' does not exist in repository history."
-            exit 1
-          fi
+          git checkout --detach "$TARGET_SHA_LOWER"
 
-          if ! git merge-base --is-ancestor "$TARGET_SHA" refs/remotes/origin/main; then
-            echo "::error::Target commit '${TARGET_SHA}' is not an ancestor of origin/main. Standalone live promotion blocked."
-            exit 1
-          fi
-
-          TARGET_SHA_LOWER=$(printf '%s' "$TARGET_SHA" | tr '[:upper:]' '[:lower:]')
           echo "target_sha=${TARGET_SHA_LOWER}" >> "$GITHUB_OUTPUT"
           echo "cloud_run_labels=commit-sha=${TARGET_SHA_LOWER}" >> "$GITHUB_OUTPUT"
-          echo "Verified standalone promotion commit ${TARGET_SHA_LOWER} is an ancestor of origin/main."
+          echo "Verified standalone promotion commit ${TARGET_SHA_LOWER} (source: ${VERIFICATION_SOURCE}, tag: ${MATCHED_TAG:-none}, CI run: ${VERIFIED_CI_RUN_ID}) and detached HEAD."
+
+      - name: Align Workspace to Attested Source Revision
+        id: align-source-revision
+        if: >-
+          inputs.commit_sha == '' &&
+          steps.validate-sha.outputs.is_rollback_call != 'true' &&
+          steps.provenance.outcome == 'success' &&
+          steps.provenance.outputs.source_revision != '' &&
+          (steps.standalone-target.outcome == 'success' || steps.standalone-target.outcome == 'skipped')
+        timeout-minutes: 3
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_REVISION: ${{ steps.provenance.outputs.source_revision }}
+        run: |
+          if [[ ! "$SOURCE_REVISION" =~ ^[a-fA-F0-9]{40}$ ]]; then
+            echo "::error::Invalid attested source_revision '${SOURCE_REVISION}'."
+            exit 1
+          fi
+          SOURCE_REV_LOWER=$(printf '%s' "$SOURCE_REVISION" | tr '[:upper:]' '[:lower:]')
+          CURRENT_HEAD=$(git rev-parse HEAD 2>/dev/null | tr '[:upper:]' '[:lower:]' || true)
+
+          if ! git cat-file -e "${SOURCE_REV_LOWER}^{commit}" 2>/dev/null || ! git rev-parse --verify "${SOURCE_REV_LOWER}^1" >/dev/null 2>&1; then
+            if git remote get-url origin >/dev/null 2>&1; then
+              GIT_AUTH_ARGS=()
+              ORIGIN_URL=$(git remote get-url origin 2>/dev/null || true)
+              EFFECTIVE_GIT_TOKEN="${GH_TOKEN:-${GITHUB_TOKEN:-}}"
+              if [ -n "$EFFECTIVE_GIT_TOKEN" ] && [[ "$ORIGIN_URL" =~ ^https?://[^/]+ ]]; then
+                ORIGIN_SERVER="${BASH_REMATCH[0]}"
+                BASIC_TOKEN=$(printf 'x-access-token:%s' "$EFFECTIVE_GIT_TOKEN" | base64 | tr -d '\r\n')
+                GIT_AUTH_ARGS=(-c "http.${ORIGIN_SERVER}/.extraheader=AUTHORIZATION: basic ${BASIC_TOKEN}")
+              fi
+              git "${GIT_AUTH_ARGS[@]}" fetch --no-tags --depth=2 origin "$SOURCE_REV_LOWER" 2>/dev/null || \
+                git "${GIT_AUTH_ARGS[@]}" fetch --no-tags origin "$SOURCE_REV_LOWER" 2>/dev/null || true
+            fi
+          fi
+
+          if ! git cat-file -e "${SOURCE_REV_LOWER}^{commit}" 2>/dev/null; then
+            echo "::error::Attested source_revision '${SOURCE_REV_LOWER}' does not exist in repository history."
+            exit 1
+          fi
+
+          if [ "$CURRENT_HEAD" != "$SOURCE_REV_LOWER" ]; then
+            git checkout --detach "$SOURCE_REV_LOWER"
+          fi
+          echo "Aligned workspace HEAD to attested source_revision ${SOURCE_REV_LOWER}."
 
       - name: Verify Standalone CI & Database Migration Status
         id: standalone-gate
@@ -857,6 +825,7 @@ jobs:
           steps.resolve.outcome == 'success' &&
           (steps.provenance.outcome == 'success' || steps.provenance.outcome == 'skipped') &&
           (steps.standalone-target.outcome == 'success' || steps.standalone-target.outcome == 'skipped') &&
+          (steps.align-source-revision.outcome == 'success' || steps.align-source-revision.outcome == 'skipped') &&
           (steps.standalone-gate.outcome == 'success' || steps.standalone-gate.outcome == 'skipped')
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
@@ -891,17 +860,37 @@ jobs:
           (!cancelled() || steps.validate-sha.outputs.is_rollback_call == 'true') &&
           steps.checkout.outcome == 'success'
         env:
+          GH_TOKEN: ${{ github.token }}
           INPUT_COMMIT_SHA: ${{ inputs.commit_sha }}
+          STANDALONE_TARGET_SHA: ${{ steps.standalone-target.outputs.target_sha }}
+          SOURCE_REVISION: ${{ steps.provenance.outputs.source_revision }}
           INCOMING_TAG: ${{ inputs.image_tag || '' }}
           CURRENT_SHA: ${{ inputs.commit_sha || github.sha }}
         run: |
           GIT_REF_TARGET="HEAD"
           if [[ "${INPUT_COMMIT_SHA:-}" =~ ^[a-fA-F0-9]{40}$ ]]; then
             GIT_REF_TARGET="$INPUT_COMMIT_SHA"
+          elif [[ "${STANDALONE_TARGET_SHA:-}" =~ ^[a-fA-F0-9]{40}$ ]]; then
+            GIT_REF_TARGET="$STANDALONE_TARGET_SHA"
+          elif [[ "${SOURCE_REVISION:-}" =~ ^[a-fA-F0-9]{40}$ ]]; then
+            GIT_REF_TARGET="$SOURCE_REVISION"
           elif [[ "${INCOMING_TAG:-}" =~ ^[a-fA-F0-9]{40}$ ]]; then
             GIT_REF_TARGET="$INCOMING_TAG"
           elif [[ "${CURRENT_SHA:-}" =~ ^[a-fA-F0-9]{40}$ ]]; then
             GIT_REF_TARGET="$CURRENT_SHA"
+          fi
+          if [[ "$GIT_REF_TARGET" =~ ^[a-fA-F0-9]{40}$ ]] && ! git -C target-commit cat-file -e "${GIT_REF_TARGET}^{commit}" 2>/dev/null; then
+            if git -C target-commit remote get-url origin >/dev/null 2>&1; then
+              GIT_AUTH_ARGS=()
+              ORIGIN_URL=$(git -C target-commit remote get-url origin 2>/dev/null || true)
+              EFFECTIVE_GIT_TOKEN="${GH_TOKEN:-${GITHUB_TOKEN:-}}"
+              if [ -n "$EFFECTIVE_GIT_TOKEN" ] && [[ "$ORIGIN_URL" =~ ^https?://[^/]+ ]]; then
+                ORIGIN_SERVER="${BASH_REMATCH[0]}"
+                BASIC_TOKEN=$(printf 'x-access-token:%s' "$EFFECTIVE_GIT_TOKEN" | base64 | tr -d '\r\n')
+                GIT_AUTH_ARGS=(-c "http.${ORIGIN_SERVER}/.extraheader=AUTHORIZATION: basic ${BASIC_TOKEN}")
+              fi
+              git "${GIT_AUTH_ARGS[@]}" -C target-commit fetch --no-tags --depth=11 origin "$GIT_REF_TARGET" 2>/dev/null || true
+            fi
           fi
           PARENT_SHAS=$(git -C target-commit rev-list --first-parent --skip=1 --max-count=10 "$GIT_REF_TARGET" 2>/dev/null | paste -sd ',' - || true)
           rm -rf target-commit
@@ -1206,6 +1195,8 @@ jobs:
           INCOMING_DIGEST: ${{ needs.preflight.outputs.image_digest }}
           PREFLIGHT_PARENT_SHAS: ${{ needs.preflight.outputs.git_parent_shas }}
           INPUT_COMMIT_SHA: ${{ inputs.commit_sha }}
+          STANDALONE_TARGET_SHA: ${{ needs.preflight.outputs.standalone_target_sha }}
+          SOURCE_REVISION: ${{ needs.preflight.outputs.source_revision }}
           CURRENT_SHA: ${{ inputs.commit_sha || github.sha }}
           DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
           GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
@@ -1238,6 +1229,10 @@ jobs:
           EFFECTIVE_TARGET_SHA=""
           if [[ "${INPUT_COMMIT_SHA:-}" =~ ^[a-fA-F0-9]{40}$ ]]; then
             EFFECTIVE_TARGET_SHA="$INPUT_COMMIT_SHA"
+          elif [[ "${STANDALONE_TARGET_SHA:-}" =~ ^[a-fA-F0-9]{40}$ ]]; then
+            EFFECTIVE_TARGET_SHA="$STANDALONE_TARGET_SHA"
+          elif [[ "${SOURCE_REVISION:-}" =~ ^[a-fA-F0-9]{40}$ ]]; then
+            EFFECTIVE_TARGET_SHA="$SOURCE_REVISION"
           elif [[ "${INCOMING_TAG:-}" =~ ^[a-fA-F0-9]{40}$ ]]; then
             EFFECTIVE_TARGET_SHA="$INCOMING_TAG"
           elif [[ "${CURRENT_SHA:-}" =~ ^[a-fA-F0-9]{40}$ ]]; then
