@@ -93,6 +93,9 @@ jobs:
     name: Database Migration (${{ inputs.environment }})
     permissions:
       contents: read
+      actions: read
+      packages: read
+      attestations: read
     uses: ./.github/workflows/db-migrate.yml
     with:
       environment: ${{ inputs.environment }}

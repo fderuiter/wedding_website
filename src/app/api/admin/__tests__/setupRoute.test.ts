@@ -1177,5 +1177,67 @@ describe('Setup API Route (/api/admin/setup)', () => {
         })
       );
     });
+
+    test('normalizes date-only weddingDate and optional ceremonyTime in venue timezone during setup POST', async () => {
+      (mockPrisma.appConfig.findUnique as jest.Mock).mockResolvedValue({
+        ...initializedConfig,
+        setupCompleted: false,
+      });
+      (mockPrisma.appConfig.upsert as jest.Mock).mockImplementation(async (args) => ({
+        ...initializedConfig,
+        ...args.update,
+      }));
+
+      const adminToken = await signAdminToken({ isAdmin: true, iat: Date.now() });
+
+      // 2027-06-20 with blank ceremonyTime defaults to 16:00 in America/Chicago (2027-06-20T21:00:00.000Z)
+      const chicagoReq = new NextRequest('http://localhost/api/admin/setup', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          cookie: `admin_auth=${adminToken}`,
+        },
+        body: JSON.stringify({
+          partner1Name: 'Maya',
+          partner2Name: 'Liam',
+          weddingDate: '2027-06-20',
+          timezone: 'America/Chicago',
+          baseUrl: 'https://mayaliam.org',
+        }),
+      });
+      const chicagoRes = await POST(chicagoReq);
+      expect(chicagoRes.status).toBe(200);
+      const chicagoUpsertArg = (mockPrisma.appConfig.upsert as jest.Mock).mock.calls[0][0];
+      expect((chicagoUpsertArg.update.weddingDate as Date).toISOString()).toBe(
+        '2027-06-20T21:00:00.000Z'
+      );
+      expect(chicagoUpsertArg.update.heroSubtitle).toContain('June 20, 2027');
+
+      (mockPrisma.appConfig.upsert as jest.Mock).mockClear();
+
+      // Evening 19:30 ceremony in America/Los_Angeles -> 2027-06-21T02:30:00.000Z while starter copy stays June 20, 2027
+      const laReq = new NextRequest('http://localhost/api/admin/setup', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          cookie: `admin_auth=${adminToken}`,
+        },
+        body: JSON.stringify({
+          partner1Name: 'Maya',
+          partner2Name: 'Liam',
+          weddingDate: '2027-06-20',
+          ceremonyTime: '19:30',
+          timezone: 'America/Los_Angeles',
+          baseUrl: 'https://mayaliam.org',
+        }),
+      });
+      const laRes = await POST(laReq);
+      expect(laRes.status).toBe(200);
+      const laUpsertArg = (mockPrisma.appConfig.upsert as jest.Mock).mock.calls[0][0];
+      expect((laUpsertArg.update.weddingDate as Date).toISOString()).toBe(
+        '2027-06-21T02:30:00.000Z'
+      );
+      expect(laUpsertArg.update.heroSubtitle).toContain('June 20, 2027');
+    });
   });
 });

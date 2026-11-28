@@ -2,6 +2,7 @@ import { prisma } from '@/lib/prisma';
 import { getAppConfig } from '@/lib/config';
 import { generateSecureUUID } from '@/utils/uuid';
 import { sanitizeUrl } from '@/utils/validationPrimitives';
+import { formatVenueWeddingDate } from '@/utils/venueDateTime';
 import {
   buildGuestRsvpUrl,
   isStationeryCardBody,
@@ -100,14 +101,11 @@ interface RecipientBatchOutcome {
 }
 
 export class BroadcastService {
-  private static formatWeddingDate(weddingDate?: Date | string | null): string {
-    return weddingDate
-      ? new Date(weddingDate).toLocaleDateString('en-US', {
-        month: 'long',
-        day: 'numeric',
-        year: 'numeric',
-      })
-      : '';
+  private static formatWeddingDate(
+    weddingDate?: Date | string | null,
+    timezone?: string | null
+  ): string {
+    return weddingDate ? formatVenueWeddingDate(weddingDate, timezone) : '';
   }
 
   private static buildTemplateContext(
@@ -119,6 +117,7 @@ export class BroadcastService {
     config:
       | {
         weddingDate?: Date | string | null;
+        timezone?: string | null;
         venueName?: string | null;
         venueAddress?: string | null;
         venueCity?: string | null;
@@ -155,7 +154,7 @@ export class BroadcastService {
       rsvpUrl: buildGuestRsvpUrl(baseUrl, invitationCode),
       baseUrl,
       householdName: guest.householdName || '',
-      weddingDate: this.formatWeddingDate(config?.weddingDate),
+      weddingDate: this.formatWeddingDate(config?.weddingDate, config?.timezone),
       venueName: config?.venueName || '',
       venueLocation,
       coupleNames,

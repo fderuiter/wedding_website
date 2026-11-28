@@ -18,6 +18,11 @@ import {
   isValidRsvpGracePeriodHours,
   sanitizeRsvpClosedMessage,
 } from '@/utils/rsvpDeadline';
+import {
+  isValidCeremonyTime,
+  isValidDateOnly,
+  normalizeVenueWeddingDate,
+} from '@/utils/venueDateTime';
 
 const hexColorRegex = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/i;
 const layoutTokenRegex = /^\d+(\.\d+)?(px|rem|em|%|ch)$/;
@@ -163,12 +168,42 @@ const rawUpdateAppConfigBaseSchema = z.object({
     .union([z.string(), z.date()])
     .refine(
       (val) => {
-        const d = new Date(val);
+        if (typeof val === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(val.trim())) {
+          return isValidDateOnly(val.trim());
+        }
+        const d = val instanceof Date ? val : new Date(val);
         return !isNaN(d.getTime());
       },
       { message: 'Invalid chronological date format.' },
     )
-    .transform((val) => new Date(val)),
+    .transform((val) => {
+      if (val instanceof Date) return val;
+      const trimmed = val.trim();
+      if (
+        /^\d{4}-\d{2}-\d{2}$/.test(trimmed) ||
+        /^\d{4}-\d{2}-\d{2}T00:00(?::00(?:\.0{1,6})?)?(?:Z|[+-]00:?00)$/i.test(
+          trimmed,
+        )
+      ) {
+        return new Date(`${trimmed.slice(0, 10)}T00:00:00.000Z`);
+      }
+      const parsed = new Date(trimmed);
+      if (
+        parsed.getUTCHours() === 0 &&
+        parsed.getUTCMinutes() === 0 &&
+        parsed.getUTCSeconds() === 0 &&
+        parsed.getUTCMilliseconds() === 0
+      ) {
+        return new Date(parsed.getTime() + 1);
+      }
+      return parsed;
+    }),
+  ceremonyTime: z
+    .string()
+    .refine((val) => val.trim() === '' || isValidCeremonyTime(val.trim()), {
+      message: 'Invalid ceremony time format. Expected HH:MM.',
+    })
+    .optional(),
   baseUrl: z
     .string()
     .refine(isSafeHttpBaseUrl, { message: 'Invalid URL format' }),
@@ -446,13 +481,22 @@ export const CreateAppConfigProfileSchema = rawUpdateAppConfigBaseSchema
   .transform((data) => {
     const partner1Name = data.partner1Name || data.brideName || 'Partner 1';
     const partner2Name = data.partner2Name || data.groomName || 'Partner 2';
+    const resolvedTimezone = data.timezone ?? 'UTC';
+    const resolvedWeddingDate =
+      data.weddingDate !== undefined
+        ? (normalizeVenueWeddingDate(
+          data.weddingDate,
+          resolvedTimezone,
+          data.ceremonyTime,
+        ) ?? data.weddingDate)
+        : new Date();
     return {
       ...data,
       partner1Name,
       partner2Name,
       brideName: partner1Name,
       groomName: partner2Name,
-      weddingDate: data.weddingDate ?? new Date(),
+      weddingDate: resolvedWeddingDate,
       baseUrl: data.baseUrl ?? '',
       venueName: data.venueName ?? 'TBD Venue',
       venueAddress: data.venueAddress ?? '',
@@ -552,6 +596,13 @@ export const UpdateAppConfigSchema = RawUpdateAppConfigSchema.transform(
   (data) => {
     const partner1Name = data.partner1Name || data.brideName || '';
     const partner2Name = data.partner2Name || data.groomName || '';
+    const resolvedTimezone = data.timezone ?? 'UTC';
+    const resolvedWeddingDate =
+      normalizeVenueWeddingDate(
+        data.weddingDate,
+        resolvedTimezone,
+        data.ceremonyTime,
+      ) ?? data.weddingDate;
     const hasCountdownModule = typeof data.modules?.countdown === 'boolean';
     const hasAddToCalendarModule =
       typeof data.modules?.addToCalendar === 'boolean';
@@ -567,6 +618,7 @@ export const UpdateAppConfigSchema = RawUpdateAppConfigSchema.transform(
       partner2Name,
       brideName: partner1Name,
       groomName: partner2Name,
+      weddingDate: resolvedWeddingDate,
       showCountdown: syncedShowCountdown,
       showAddToCalendar: syncedShowAddToCalendar,
       layoutContainerMaxWidth:
@@ -1683,11 +1735,15 @@ export function translateAppConfigSnapshot(
     snapshotData.weddingDate !== null &&
     snapshotData.weddingDate !== ''
   ) {
-    const rawDate =
-      snapshotData.weddingDate instanceof Date
-        ? snapshotData.weddingDate
-        : new Date(String(snapshotData.weddingDate));
-    const resolvedDate = Number.isNaN(rawDate.getTime()) ? new Date() : rawDate;
+    const snapshotTimezone =
+      typeof snapshotData.timezone === 'string' && snapshotData.timezone.trim()
+        ? snapshotData.timezone.trim()
+        : 'America/Chicago';
+    const normalizedDate = normalizeVenueWeddingDate(
+      snapshotData.weddingDate as Date | string | number,
+      snapshotTimezone,
+    );
+    const resolvedDate = normalizedDate ?? new Date();
     update.weddingDate = resolvedDate;
     create.weddingDate = resolvedDate;
   } else {

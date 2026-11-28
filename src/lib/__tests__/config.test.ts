@@ -1292,6 +1292,42 @@ describe('Request-Level Configuration Memoization (React cache)', () => {
       await expect(getAppConfig('global')).rejects.toThrow(
         /Production Configuration Validation Failure/,
       );
+      delete process.env.SITE_THEME_TOKENS;
+    });
+
+    it('heals legacy T00:00:00.000Z database rows and SITE_WEDDING_DATE overrides to 16:00 in config.timezone', async () => {
+      const globalWithStore = globalThis as typeof globalThis & {
+        globalFallbackStore?: Map<string, unknown>;
+      };
+      globalWithStore.globalFallbackStore?.clear();
+
+      for (const [tz, expectedIso] of [
+        ['America/New_York', '2027-06-20T20:00:00.000Z'],
+        ['America/Chicago', '2027-06-20T21:00:00.000Z'],
+        ['America/Los_Angeles', '2027-06-20T23:00:00.000Z'],
+      ] as const) {
+        globalWithStore.globalFallbackStore?.clear();
+        (prisma.appConfig.findUnique as jest.Mock).mockResolvedValue({
+          ...baseConfig,
+          id: 'global',
+          weddingDate: new Date('2027-06-20T00:00:00.000Z'),
+          timezone: tz,
+        });
+
+        const resolved = await getAppConfig('global');
+        expect(resolved.weddingDate.toISOString()).toBe(expectedIso);
+      }
+
+      globalWithStore.globalFallbackStore?.clear();
+      process.env.SITE_WEDDING_DATE = '2027-06-20';
+      (prisma.appConfig.findUnique as jest.Mock).mockResolvedValue({
+        ...baseConfig,
+        id: 'global',
+        timezone: 'America/Chicago',
+      });
+      const envResolved = await getAppConfig('global');
+      expect(envResolved.weddingDate.toISOString()).toBe('2027-06-20T21:00:00.000Z');
+      delete process.env.SITE_WEDDING_DATE;
     });
   });
 });

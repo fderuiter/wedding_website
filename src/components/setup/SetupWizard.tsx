@@ -60,6 +60,13 @@ import {
   isUpcomingWeddingDate,
   synthesizeSetupStarterCopy,
 } from '@/lib/setupCopy';
+import {
+  DEFAULT_CEREMONY_TIME,
+  formatVenueCeremonyConfirmation,
+  normalizeCeremonyTime,
+  normalizeVenueWeddingDate,
+  resolveVenueDateTimeInstant,
+} from '@/utils/venueDateTime';
 
 /**
  * Render a multi-step admin setup wizard for configuring a wedding site.
@@ -325,6 +332,7 @@ function SetupWizardContent({
     partner1Name,
     partner2Name,
     weddingDate,
+    ceremonyTime = DEFAULT_CEREMONY_TIME,
     baseUrl,
     contactEmail = '',
     venueName,
@@ -347,6 +355,7 @@ function SetupWizardContent({
   const setPartner1Name = (val: string) => updateDraft({ partner1Name: val });
   const setPartner2Name = (val: string) => updateDraft({ partner2Name: val });
   const setWeddingDate = (val: string) => updateDraft({ weddingDate: val });
+  const setCeremonyTime = (val: string) => updateDraft({ ceremonyTime: val });
   const setBaseUrl = (val: string) => updateDraft({ baseUrl: val });
   const setContactEmail = (val: string) => updateDraft({ contactEmail: val });
   const setVenueName = (val: string) => updateDraft({ venueName: val });
@@ -649,11 +658,25 @@ function SetupWizardContent({
     const resolvedTimezone =
       (typeof rawTimezoneInput === 'string' ? rawTimezoneInput.trim() : timezone.trim()) ||
       'America/Chicago';
+    const resolvedCeremonyTime = normalizeCeremonyTime(
+      ceremonyTime,
+      DEFAULT_CEREMONY_TIME,
+    );
+    const resolvedCeremonyInstant = weddingDate
+      ? resolveVenueDateTimeInstant(
+        weddingDate,
+        resolvedCeremonyTime,
+        resolvedTimezone,
+      )
+      : null;
+    const serializedWeddingDate = resolvedCeremonyInstant
+      ? resolvedCeremonyInstant.toISOString()
+      : weddingDate;
     const resolvedModules = resolveModuleConfig(enabledFeatures);
     const starterCopy = synthesizeSetupStarterCopy({
       partner1Name: trimmedPartner1,
       partner2Name: trimmedPartner2,
-      weddingDate,
+      weddingDate: serializedWeddingDate,
       timezone: resolvedTimezone,
       venueName: cleanedVenueName,
       venueCity: cleanedVenueCity,
@@ -663,6 +686,7 @@ function SetupWizardContent({
     updateDraft({
       partner1Name: trimmedPartner1,
       partner2Name: trimmedPartner2,
+      ceremonyTime: resolvedCeremonyTime,
       baseUrl: trimmedBaseUrl,
       contactEmail: trimmedContactEmail,
       venueName: cleanedVenueName,
@@ -677,7 +701,15 @@ function SetupWizardContent({
       demo.updateConfigOverrides({
         partner1Name: trimmedPartner1,
         partner2Name: trimmedPartner2,
-        weddingDate: weddingDate ? new Date(`${weddingDate}T16:00:00Z`) : new Date('2026-10-18T16:00:00Z'),
+        weddingDate:
+          resolvedCeremonyInstant ??
+          (weddingDate
+            ? (normalizeVenueWeddingDate(
+              weddingDate,
+              resolvedTimezone,
+              resolvedCeremonyTime,
+            ) ?? new Date(`${weddingDate}T16:00:00Z`))
+            : new Date('2026-10-18T21:00:00Z')),
         contactEmail: trimmedContactEmail,
         venueName: cleanedVenueName,
         venueAddress: cleanedVenueAddress,
@@ -714,7 +746,8 @@ function SetupWizardContent({
         body: JSON.stringify({
           partner1Name: trimmedPartner1,
           partner2Name: trimmedPartner2,
-          weddingDate,
+          weddingDate: serializedWeddingDate,
+          ceremonyTime: resolvedCeremonyTime,
           baseUrl: trimmedBaseUrl,
           contactEmail: trimmedContactEmail,
           venueName: cleanedVenueName,
@@ -985,10 +1018,14 @@ function SetupWizardContent({
     ? colorSecondary.trim()
     : '#2D3748';
   const previewCtaTextColor = getReadableTextOnHex(safePreviewPrimary);
+  const previewTimezone = timezone || 'America/Chicago';
+  const ceremonyConfirmation = formatVenueCeremonyConfirmation(
+    weddingDate,
+    ceremonyTime,
+    previewTimezone,
+  );
   const previewParsedDate = weddingDate
-    ? /^\d{4}-\d{2}-\d{2}$/.test(weddingDate.trim())
-      ? new Date(`${weddingDate.trim()}T16:00:00.000Z`)
-      : new Date(weddingDate)
+    ? normalizeVenueWeddingDate(weddingDate, previewTimezone, ceremonyTime)
     : null;
   const hasValidPreviewDate = Boolean(
     previewParsedDate && !Number.isNaN(previewParsedDate.getTime())
@@ -996,7 +1033,7 @@ function SetupWizardContent({
   const showPreviewCountdown =
     enabledFeatures.countdown &&
     hasValidPreviewDate &&
-    isUpcomingWeddingDate(weddingDate);
+    isUpcomingWeddingDate(previewParsedDate ?? weddingDate, new Date(), previewTimezone);
 
   const handleCompleteAndExit = async (destinationPath = '/admin/dashboard') => {
     completeStaticDemoSetup();
@@ -1171,41 +1208,65 @@ function SetupWizardContent({
                   ) : null}
                 </FormGroup>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <FormGroup state={!!error && step === 2 && step2ErrorField === 'weddingDate' ? 'error' : 'default'}>
-                  <Label htmlFor="weddingDate">Wedding Date</Label>
-                  <Input
-                    ref={weddingDateInputRef}
-                    id="weddingDate"
-                    type="date"
-                    value={weddingDate}
-                    onChange={(e) => setWeddingDate(e.target.value)}
-                    required
-                  />
-                  {error && step === 2 && step2ErrorField === 'weddingDate' ? (
-                    <FormMessage role="alert">{error}</FormMessage>
-                  ) : null}
-                </FormGroup>
-                <FormGroup state={!!error && step === 2 && step2ErrorField === 'timezone' ? 'error' : 'default'}>
-                  <Label htmlFor="timezone">Venue Timezone</Label>
-                  <SearchableTimezoneSelect
-                    ref={timezoneInputRef}
-                    id="timezone"
-                    name="timezone"
-                    value={timezone}
-                    onChange={(val) => setTimezone(val)}
-                    placeholder="Search and select timezone (e.g. America/Chicago)..."
-                    required
-                    commitRawOnBlur
-                  />
-                  {error && step === 2 && step2ErrorField === 'timezone' ? (
-                    <FormMessage role="alert">{error}</FormMessage>
-                  ) : !initialSavedConfig?.timezone && timezone === browserDetectedTimezone ? (
-                    <FormMessage id="timezone-detected-hint">
-                      Detected from your browser ({browserDetectedTimezone})
-                    </FormMessage>
-                  ) : null}
-                </FormGroup>
+              <div className="space-y-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <FormGroup state={!!error && step === 2 && step2ErrorField === 'weddingDate' ? 'error' : 'default'}>
+                    <Label htmlFor="weddingDate">Wedding Date</Label>
+                    <Input
+                      ref={weddingDateInputRef}
+                      id="weddingDate"
+                      type="date"
+                      value={weddingDate}
+                      onChange={(e) => setWeddingDate(e.target.value)}
+                      required
+                    />
+                    {error && step === 2 && step2ErrorField === 'weddingDate' ? (
+                      <FormMessage role="alert">{error}</FormMessage>
+                    ) : null}
+                  </FormGroup>
+                  <FormGroup>
+                    <Label htmlFor="ceremonyTime">Ceremony Start Time (Optional)</Label>
+                    <Input
+                      id="ceremonyTime"
+                      type="time"
+                      value={ceremonyTime}
+                      onChange={(e) => setCeremonyTime(e.target.value)}
+                    />
+                    <FormMessage>Defaults to 4:00 PM if left blank.</FormMessage>
+                  </FormGroup>
+                  <FormGroup
+                    className="sm:col-span-2"
+                    state={!!error && step === 2 && step2ErrorField === 'timezone' ? 'error' : 'default'}
+                  >
+                    <Label htmlFor="timezone">Venue Timezone</Label>
+                    <SearchableTimezoneSelect
+                      ref={timezoneInputRef}
+                      id="timezone"
+                      name="timezone"
+                      value={timezone}
+                      onChange={(val) => setTimezone(val)}
+                      placeholder="Search and select timezone (e.g. America/Chicago)..."
+                      required
+                      commitRawOnBlur
+                    />
+                    {error && step === 2 && step2ErrorField === 'timezone' ? (
+                      <FormMessage role="alert">{error}</FormMessage>
+                    ) : !initialSavedConfig?.timezone && timezone === browserDetectedTimezone ? (
+                      <FormMessage id="timezone-detected-hint">
+                        Detected from your browser ({browserDetectedTimezone})
+                      </FormMessage>
+                    ) : null}
+                  </FormGroup>
+                </div>
+                {ceremonyConfirmation && (
+                  <p
+                    data-testid="setup-ceremony-confirmation"
+                    aria-live="polite"
+                    className="text-sm font-medium text-gray-700 dark:text-gray-200 bg-gray-50 dark:bg-zinc-800/70 border border-gray-200 dark:border-zinc-700 rounded-lg px-3 py-2"
+                  >
+                    Ceremony scheduled for {ceremonyConfirmation}
+                  </p>
+                )}
               </div>
               <FormGroup state={isDefaultUrl(baseUrl) || (!!error && step === 2 && step2ErrorField === 'siteUrl') ? 'error' : 'default'}>
                 <Label htmlFor="siteUrl">Site URL (e.g. https://ourwedding.com)</Label>
@@ -1504,7 +1565,10 @@ function SetupWizardContent({
                         borderRadius: previewCardRadius,
                       }}
                     >
-                      <Countdown targetDate={previewParsedDate.toISOString()} />
+                      <Countdown
+                        targetDate={previewParsedDate.toISOString()}
+                        timeZone={previewTimezone}
+                      />
                     </div>
                   )}
 

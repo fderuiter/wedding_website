@@ -1,4 +1,5 @@
 import { render, screen, act, fireEvent } from '@testing-library/react';
+import { renderToString } from 'react-dom/server';
 import '@testing-library/jest-dom';
 import { axe, toHaveNoViolations } from 'jest-axe';
 import { a11yConfig } from '@/a11y-config';
@@ -311,5 +312,43 @@ describe('Countdown', () => {
       <Countdown targetDate={pastDate.toISOString()} />
     );
     expect(await axe(completedContainer, axeOptions)).toHaveNoViolations();
+  });
+
+  it('reaches zero at the configured venue ceremony instant and renders venue-localized dates during SSR and noscript', () => {
+    // 2027-06-20 at 16:00 CDT (America/Chicago) = 2027-06-20T21:00:00.000Z
+    jest.setSystemTime(new Date('2027-06-20T20:59:58.000Z'));
+
+    const { container } = render(
+      <Countdown targetDate="2027-06-20T21:00:00.000Z" timeZone="America/Chicago" />
+    );
+
+    expect(screen.getByRole('timer')).toHaveTextContent(
+      '0 days 0 hours 0 minutes 2 seconds to go!'
+    );
+
+    const noscriptEl = container.querySelector('noscript');
+    expect(noscriptEl).not.toBeNull();
+    const ssrChicagoMarkup = renderToString(
+      <Countdown targetDate="2027-06-20T21:00:00.000Z" timeZone="America/Chicago" />
+    );
+    expect(ssrChicagoMarkup).toMatch(/<noscript><div[^>]*>June 20, 2027<\/div><\/noscript>/);
+
+    act(() => {
+      jest.advanceTimersByTime(2000);
+    });
+    expect(screen.getByRole('status')).toHaveTextContent('The wedding day is here!');
+
+    // SSR output for evening 19:30 PDT ceremony (2027-06-21T02:30:00.000Z) and legacy T00:00:00.000Z
+    const ssrLaEvening = renderToString(
+      <Countdown targetDate="2027-06-21T02:30:00.000Z" timeZone="America/Los_Angeles" />
+    );
+    expect(ssrLaEvening).toContain('June 20, 2027');
+    expect(ssrLaEvening).not.toContain('June 21, 2027');
+
+    const ssrLegacyChicago = renderToString(
+      <Countdown targetDate="2027-06-20T00:00:00.000Z" timeZone="America/Chicago" />
+    );
+    expect(ssrLegacyChicago).toContain('June 20, 2027');
+    expect(ssrLegacyChicago).not.toContain('June 19, 2027');
   });
 });

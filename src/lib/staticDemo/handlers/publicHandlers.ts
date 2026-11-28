@@ -29,6 +29,10 @@ import { synthesizeDemoHouseholdMembersFromInvitations } from '../seeds';
 import { createCompactUploadThumbnail, createDemoSvgDataUrl } from '../svgAssets';
 import { normalizePartyTags, splitMemberFullName } from '@/utils/invitationValidation';
 import {
+  extractVenueDateAndTime,
+  subtractCalendarDays,
+} from '@/utils/venueDateTime';
+import {
   RECOVERY_CONFIRMATION_MESSAGE,
   findUnambiguousRecoverableInvitation,
   hasRecoveryHoneypotTripped,
@@ -66,13 +70,15 @@ function resolveActiveInvitation(
   );
 }
 
-function buildClimateForecast(latitude: number, weddingDateIso: string) {
-  const dayStr = weddingDateIso.slice(0, 10) || '2026-09-19';
-  const weddingMs =
-    Date.parse(`${dayStr}T00:00:00Z`) || Date.parse('2026-09-19T00:00:00Z');
-  const availStr = new Date(weddingMs - 16 * 24 * 60 * 60 * 1000)
-    .toISOString()
-    .slice(0, 10);
+function buildClimateForecast(
+  latitude: number,
+  weddingDateIso: string,
+  timezone?: string,
+) {
+  const dayStr =
+    extractVenueDateAndTime(weddingDateIso, timezone || 'UTC').date ||
+    '2026-09-19';
+  const availStr = subtractCalendarDays(dayStr, 16);
   const absLat = Math.abs(Number.isFinite(latitude) ? latitude : 40.7128);
   const high = absLat < 24 ? 84 : absLat < 45 ? 75 : 68;
   const low = absLat < 24 ? 71 : absLat < 45 ? 57 : 50;
@@ -172,7 +178,7 @@ export async function handlePublicRoutes(
     const snapshot = store.getSnapshot();
     const config = getActiveAppConfig(snapshot);
     return wrapMiddlewareJson(
-      buildClimateForecast(config.latitude, config.weddingDate),
+      buildClimateForecast(config.latitude, config.weddingDate, config.timezone),
     );
   }
 

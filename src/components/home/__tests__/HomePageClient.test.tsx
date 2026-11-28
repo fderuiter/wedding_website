@@ -151,30 +151,113 @@ describe('HomePageClient', () => {
     expect(screen.queryByTestId('rsvp-card-se-pub-1')).not.toBeInTheDocument();
   });
 
-  test('localizes hero formattedDate and AddToCalendar event to venue timezone', () => {
+  test('heals legacy T00:00:00.000Z weddingDate rows to 16:00 in venue timezone and exports zoned Hero calendar invites across Google, Outlook, Yahoo, and .ics', () => {
     const openSpy = jest.spyOn(window, 'open').mockImplementation(() => null);
+    let capturedBlobText = '';
+    const originalBlob = global.Blob;
+    const blobSpy = jest
+      .spyOn(global, 'Blob')
+      .mockImplementation((parts?: BlobPart[], options?: BlobPropertyBag) => {
+        if (options?.type?.includes('text/calendar') && Array.isArray(parts)) {
+          capturedBlobText = parts.map((p) => String(p)).join('');
+        }
+        return new originalBlob(parts, options);
+      });
+    const originalCreateObjectURL = URL.createObjectURL;
+    const originalRevokeObjectURL = URL.revokeObjectURL;
+    URL.createObjectURL = jest.fn(() => 'blob:mock-ics');
+    URL.revokeObjectURL = jest.fn();
+    const anchorClickSpy = jest
+      .spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(() => {});
+
+    for (const tz of ['America/New_York', 'America/Chicago', 'America/Los_Angeles']) {
+      const { unmount } = render(
+        <HomePageClient
+          config={
+            {
+              ...mockConfig,
+              heroSubtitle: '',
+              weddingDate: '2027-06-20T00:00:00.000Z',
+              timezone: tz,
+              showAddToCalendar: false,
+              modules: { countdown: false, gallery: true, addToCalendar: false },
+            } as any
+          }
+        />
+      );
+      expect(screen.getByText(/June 20, 2027/)).toBeInTheDocument();
+      unmount();
+    }
 
     const chicagoConfig: PublicAppConfig = {
       ...mockConfig,
       heroSubtitle: '',
-      weddingDate: '2026-09-20T00:00:00.000Z',
+      weddingDate: '2027-06-20T00:00:00.000Z',
       timezone: 'America/Chicago',
       showAddToCalendar: true,
       modules: { countdown: true, gallery: true, addToCalendar: true },
     } as any;
 
-    render(<HomePageClient config={chicagoConfig} />);
+    const { unmount: unmountChicago } = render(<HomePageClient config={chicagoConfig} />);
 
-    expect(screen.getByText(/September 19, 2026/)).toBeInTheDocument();
+    expect(screen.getByText(/June 20, 2027/)).toBeInTheDocument();
 
+    // Google Calendar
     fireEvent.click(screen.getByRole('button', { name: 'Add to Calendar' }));
     fireEvent.click(screen.getByRole('menuitem', { name: 'Google' }));
-
-    expect(openSpy).toHaveBeenCalledTimes(1);
     const googleUrl = new URL(openSpy.mock.calls[0][0] as string);
-    expect(googleUrl.searchParams.get('dates')).toBe('20260919T190000/20260920T010000');
+    expect(googleUrl.searchParams.get('dates')).toBe('20270620T160000/20270620T220000');
     expect(googleUrl.searchParams.get('ctz')).toBe('America/Chicago');
 
+    // Outlook Calendar (16:00 CDT = 21:00 UTC)
+    fireEvent.click(screen.getByRole('button', { name: 'Add to Calendar' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Outlook.com' }));
+    const outlookUrl = new URL(openSpy.mock.calls[1][0] as string);
+    expect(outlookUrl.searchParams.get('startdt')).toBe('2027-06-20T16:00:00-05:00');
+    expect(outlookUrl.searchParams.get('enddt')).toBe('2027-06-20T22:00:00-05:00');
+
+    // Yahoo Calendar (16:00 CDT = 20270620T210000Z)
+    fireEvent.click(screen.getByRole('button', { name: 'Add to Calendar' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Yahoo' }));
+    const yahooUrl = new URL(openSpy.mock.calls[2][0] as string);
+    expect(yahooUrl.searchParams.get('st')).toBe('20270620T210000Z');
+    expect(yahooUrl.searchParams.get('et')).toBe('20270621T030000Z');
+
+    // Apple / .ics download
+    fireEvent.click(screen.getByRole('button', { name: 'Add to Calendar' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /Apple/i }));
+    expect(capturedBlobText).toContain('DTSTART;TZID=America/Chicago:20270620T160000');
+    expect(capturedBlobText).toContain('DTEND;TZID=America/Chicago:20270620T220000');
+    unmountChicago();
+
+    // Explicit evening ceremony in America/Los_Angeles (19:30 PDT = 2027-06-21T02:30:00.000Z)
+    openSpy.mockClear();
+    render(
+      <HomePageClient
+        config={
+          {
+            ...mockConfig,
+            heroSubtitle: '',
+            weddingDate: '2027-06-21T02:30:00.000Z',
+            timezone: 'America/Los_Angeles',
+            showAddToCalendar: true,
+            modules: { countdown: false, gallery: true, addToCalendar: true },
+          } as any
+        }
+      />
+    );
+    expect(screen.getByText(/June 20, 2027/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Add to Calendar' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Google' }));
+    const laGoogleUrl = new URL(openSpy.mock.calls[0][0] as string);
+    expect(laGoogleUrl.searchParams.get('dates')).toBe('20270620T193000/20270621T013000');
+    expect(laGoogleUrl.searchParams.get('ctz')).toBe('America/Los_Angeles');
+
+    anchorClickSpy.mockRestore();
+    URL.createObjectURL = originalCreateObjectURL;
+    URL.revokeObjectURL = originalRevokeObjectURL;
+    blobSpy.mockRestore();
     openSpy.mockRestore();
   });
 

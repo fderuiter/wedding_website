@@ -1,4 +1,4 @@
-import { FAQNodeSchema, LogisticsNodeSchema, ScheduleNodeSchema, GenericNodeSchema, ContentNodeSchema, isPrivateContentNode, isValidCssTokenValue, translateAppConfigSnapshot, RawUpdateAppConfigSchema, AppConfigSchema, layoutTokenSchema, fontTokenSchema, deriveBrandMonogram, ThemeTokensSchema, TypographyScaleSchema, SpacingScaleSchema, BorderTreatmentSchema, BrandDimensionsSchema } from '../schemas';
+import { FAQNodeSchema, LogisticsNodeSchema, ScheduleNodeSchema, GenericNodeSchema, ContentNodeSchema, isPrivateContentNode, isValidCssTokenValue, translateAppConfigSnapshot, RawUpdateAppConfigSchema, UpdateAppConfigSchema, CreateAppConfigProfileSchema, AppConfigSchema, layoutTokenSchema, fontTokenSchema, deriveBrandMonogram, ThemeTokensSchema, TypographyScaleSchema, SpacingScaleSchema, BorderTreatmentSchema, BrandDimensionsSchema } from '../schemas';
 import { ContentNodeAdminService } from '../admin.service';
 
 describe('Content Node Schema Validation', () => {
@@ -1187,6 +1187,76 @@ describe('Content Node Schema Validation', () => {
           '--btn-radius': '0.75rem',
         },
       });
+    });
+
+    it('normalizes date-only strings, explicit ceremonyTime, and legacy T00:00:00.000Z timestamps in UpdateAppConfigSchema, CreateAppConfigProfileSchema, and translateAppConfigSnapshot', () => {
+      const baseUpdateInput = {
+        partner1Name: 'Maya',
+        partner2Name: 'Liam',
+        weddingDate: '2027-06-20',
+        ceremonyTime: '16:00',
+        timezone: 'America/Chicago',
+        baseUrl: 'https://mayaliam.example.com',
+        venueName: 'Grand Hall',
+        venueAddress: '100 Main St',
+        venueCity: 'Chicago',
+        venueState: 'IL',
+        venueZip: '60601',
+        latitude: 41.88,
+        longitude: -87.63,
+        storyText: 'Story',
+        venueDescription: 'Venue',
+        travelAdvice: 'Travel',
+        heroTitle: 'Maya & Liam',
+        heroSubtitle: 'Welcome',
+        seoTitle: 'Wedding',
+        seoDescription: 'Desc',
+        faviconUrl: '/assets/favicon.png',
+        ogImageUrl: '/images/placeholder.png',
+        seoKeywords: 'wedding',
+        colorPrimary: '#B91C1C',
+        colorSecondary: '#B45309',
+        showCountdown: true,
+        showAddToCalendar: true,
+        rsvpOpen: true,
+      };
+
+      const chicagoParsed = UpdateAppConfigSchema.safeParse(baseUpdateInput);
+      expect(chicagoParsed.success).toBe(true);
+      if (chicagoParsed.success) {
+        expect(chicagoParsed.data.weddingDate.toISOString()).toBe('2027-06-20T21:00:00.000Z');
+      }
+
+      const laEveningParsed = UpdateAppConfigSchema.safeParse({
+        ...baseUpdateInput,
+        weddingDate: '2027-06-20',
+        ceremonyTime: '19:30',
+        timezone: 'America/Los_Angeles',
+      });
+      expect(laEveningParsed.success).toBe(true);
+      if (laEveningParsed.success) {
+        expect(laEveningParsed.data.weddingDate.toISOString()).toBe('2027-06-21T02:30:00.000Z');
+      }
+
+      const legacyProfile = CreateAppConfigProfileSchema.safeParse({
+        weddingDate: '2027-06-20T00:00:00.000Z',
+        timezone: 'America/Los_Angeles',
+      });
+      expect(legacyProfile.success).toBe(true);
+      if (legacyProfile.success) {
+        expect(legacyProfile.data.weddingDate.toISOString()).toBe('2027-06-20T23:00:00.000Z');
+      }
+
+      const healedSnapshot = translateAppConfigSnapshot(
+        {
+          weddingDate: '2027-06-20T00:00:00.000Z',
+          timezone: 'America/Chicago',
+        },
+        'global',
+      );
+      expect((healedSnapshot!.update.weddingDate as Date).toISOString()).toBe(
+        '2027-06-20T21:00:00.000Z',
+      );
     });
   });
 });

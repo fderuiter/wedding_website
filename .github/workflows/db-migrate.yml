@@ -61,8 +61,63 @@ concurrency:
   queue: max
 
 jobs:
+  preflight:
+    name: Verify Migration Release Target
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+      packages: read
+      attestations: read
+    outputs:
+      target_sha: ${{ steps.verify_target.outputs.target_sha }}
+    steps:
+      - name: Validate Migration Inputs
+        timeout-minutes: 1
+        env:
+          CONFIRM: ${{ inputs.confirm && 'true' || 'false' }}
+          TARGET_ENV: ${{ inputs.environment || 'production' }}
+          INPUT_COMMIT_SHA: ${{ inputs.commit_sha }}
+        run: |
+          if [ "$CONFIRM" != "true" ]; then
+            echo "::error::Database migration execution aborted for environment '${TARGET_ENV}': 'confirm' input must be set to true."
+            echo "### 🛑 Database Migration Aborted (Unconfirmed)" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Target Environment:** \`${TARGET_ENV}\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Reason:** Manual dispatch requires \`confirm: true\` before mutating the target PostgreSQL database." >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          if [ -n "${INPUT_COMMIT_SHA:-}" ] && [[ ! "$INPUT_COMMIT_SHA" =~ ^[a-fA-F0-9]{40}$ ]]; then
+            echo "::error::Invalid commit_sha '${INPUT_COMMIT_SHA}'. Must be a 40-character hexadecimal commit SHA."
+            exit 1
+          fi
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        timeout-minutes: 2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify Release Commit Ancestry & CI Status
+        id: verify_target
+        timeout-minutes: 3
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_ACTOR_LOGIN: ${{ github.actor }}
+          INPUT_COMMIT_SHA: ${{ inputs.commit_sha }}
+          CURRENT_SHA: ${{ github.sha }}
+          REPO_OWNER: ${{ github.repository_owner }}
+          SIGNER_WORKFLOW: ${{ github.repository }}/.github/workflows/publish-artifact.yml
+        run: |
+          RESOLVED_SHA="${INPUT_COMMIT_SHA:-${CURRENT_SHA}}"
+          VERIFIED_ROW=$(bash ./scripts/verify-release-target.sh --target-sha "$RESOLVED_SHA")
+          IFS='|' read -r TARGET_SHA VERIFICATION_SOURCE MATCHED_TAG VERIFIED_CI_RUN_ID <<< "$VERIFIED_ROW"
+          echo "target_sha=${TARGET_SHA}" >> "$GITHUB_OUTPUT"
+          echo "Verified migration release commit ${TARGET_SHA} (source: ${VERIFICATION_SOURCE}, tag: ${MATCHED_TAG:-none}, CI run: ${VERIFIED_CI_RUN_ID})."
+
   migrate:
     name: Execute Database Migrations
+    needs: [preflight]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -103,9 +158,9 @@ jobs:
           persist-credentials: false
 
       - name: Align Migration Workspace to Target Commit SHA
-        if: inputs.commit_sha != ''
+        if: needs.preflight.outputs.target_sha != '' || inputs.commit_sha != ''
         env:
-          TARGET_SHA: ${{ inputs.commit_sha }}
+          TARGET_SHA: ${{ needs.preflight.outputs.target_sha || inputs.commit_sha }}
         run: |
           HEAD_SHA=$(git rev-parse HEAD)
           if [ "${HEAD_SHA,,}" != "${TARGET_SHA,,}" ]; then
@@ -118,9 +173,7 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies
-        env:
-          SKIP_NEXT_TYPEGEN: 'true'
-        run: npm ci
+        run: npm ci --ignore-scripts
 
       - name: Run preflight migration linter
         id: lint_migrations

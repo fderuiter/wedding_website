@@ -7,6 +7,7 @@ import { enforceAdminPageSession, isStaticExportBuild } from '@/core/auth/adminP
 import { getAppConfig, isSiteInitialized, isSetupCompleted } from '@/lib/config';
 import { resolveModuleConfig } from '@/lib/modules';
 import { isNonPlaceholderVenueText } from '@/utils/maps';
+import { extractVenueDateAndTime } from '@/utils/venueDateTime';
 
 export const metadata: Metadata = createPageMetadata({
   title: 'Initial Site Setup',
@@ -35,10 +36,11 @@ export default async function AdminSetupPage() {
 
   let initialSavedConfig: SetupWizardSavedConfig | undefined;
   if (initialized) {
-    const weddingDateIso =
+    const resolvedTimezone = config.timezone || 'America/Chicago';
+    const hydratedVenueDateTime =
       config.weddingDate instanceof Date && !Number.isNaN(config.weddingDate.getTime())
-        ? config.weddingDate.toISOString().slice(0, 10)
-        : '';
+        ? extractVenueDateAndTime(config.weddingDate, resolvedTimezone)
+        : { date: '', time: '16:00' };
     const cleanVenue = (val: string | null | undefined) =>
       isNonPlaceholderVenueText(val) ? val.trim() : '';
     const hasSavedModuleFields =
@@ -59,7 +61,8 @@ export default async function AdminSetupPage() {
       step: 3,
       partner1Name: config.partner1Name || config.brideName || '',
       partner2Name: config.partner2Name || config.groomName || '',
-      weddingDate: weddingDateIso,
+      weddingDate: hydratedVenueDateTime.date,
+      ceremonyTime: hydratedVenueDateTime.time,
       baseUrl: config.baseUrl || '',
       contactEmail: config.contactEmail || '',
       venueName: cleanVenue(config.venueName),
@@ -75,7 +78,7 @@ export default async function AdminSetupPage() {
         typeof config.longitude === 'number' && Number.isFinite(config.longitude)
           ? config.longitude
           : 0,
-      timezone: config.timezone || 'America/Chicago',
+      timezone: resolvedTimezone,
       themePreset: config.themePreset,
       colorPrimary: config.colorPrimary,
       colorSecondary: config.colorSecondary,

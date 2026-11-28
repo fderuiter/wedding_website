@@ -18,7 +18,8 @@ type NextFetchRequestInit = RequestInit & {
 
 export async function getWeatherForecast() {
   const config = await getAppConfig();
-  const WEDDING_DAY = formatForecastDateInTimezone(config.weddingDate, config.timezone);
+  const resolvedTimezone = config.timezone || 'UTC';
+  const WEDDING_DAY = formatForecastDateInTimezone(config.weddingDate, resolvedTimezone);
 
   let LAT = TEMPERATE_DEFAULT_LAT;
   let LON = TEMPERATE_DEFAULT_LON;
@@ -39,14 +40,24 @@ export async function getWeatherForecast() {
     }
   }
 
-  const todayStr = formatForecastDateInTimezone(new Date(), config.timezone);
+  let todayStr: string;
+  try {
+    todayStr = new Intl.DateTimeFormat('en-CA', {
+      timeZone: resolvedTimezone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(new Date());
+  } catch {
+    todayStr = new Date().toISOString().split('T')[0];
+  }
   const todayMs = Date.parse(`${todayStr}T00:00:00Z`);
   const weddingMs = Date.parse(`${WEDDING_DAY}T00:00:00Z`);
 
   const diffInDays = Math.round((weddingMs - todayMs) / (1000 * 60 * 60 * 24));
   const liveForecastAvailableDate = computeLiveForecastAvailableDate(
     WEDDING_DAY,
-    config.timezone
+    resolvedTimezone
   );
 
   // If outside 16-day forecast horizon (future beyond 16 days or past), query Open-Meteo Climate API

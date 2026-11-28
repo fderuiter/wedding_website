@@ -21,6 +21,7 @@ import {
 import { stripPresetDefaultTokens } from '@/lib/theme/presets';
 import { resolveModuleConfig } from '@/lib/modules';
 import { AdminSetupSchema, formatZodError } from '@/utils/validation';
+import { normalizeVenueWeddingDate } from '@/utils/venueDateTime';
 import {
   isAdminRequest,
   setAdminAuthCookie,
@@ -288,8 +289,16 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
     (normalizeOptionalName(body.partner2Name) as string | undefined) ||
     (normalizeOptionalName(body.groomName) as string | undefined) ||
     '';
-  const resolvedWeddingDate = body.weddingDate ?? new Date().toISOString();
   const resolvedTimezone = body.timezone ?? 'America/Chicago';
+  const rawWeddingDate = body.weddingDate ?? new Date().toISOString();
+  const normalizedSetupWeddingDate = normalizeVenueWeddingDate(
+    rawWeddingDate,
+    resolvedTimezone,
+    body.ceremonyTime,
+  );
+  const resolvedWeddingDate = normalizedSetupWeddingDate
+    ? normalizedSetupWeddingDate.toISOString()
+    : rawWeddingDate;
   const cleanedVenueName = cleanOptionalSetupText(body.venueName);
   const cleanedVenueAddress = cleanOptionalSetupText(body.venueAddress);
   const cleanedVenueCity = cleanOptionalSetupText(body.venueCity);

@@ -1,4 +1,9 @@
-import { formatDate } from '@/utils/intl';
+import {
+  extractVenueDateAndTime,
+  formatVenueWeddingDate,
+  resolveVenueDateTimeInstant,
+  resolveVenueTimezone,
+} from '@/utils/venueDateTime';
 
 const PLACEHOLDER_VENUE_VALUES = new Set([
   'tbd',
@@ -39,34 +44,37 @@ export function cleanOptionalSetupText(value: unknown): string {
 
 export function isUpcomingWeddingDate(
   weddingDate: Date | string | number | null | undefined,
-  referenceDate: Date = new Date()
+  referenceDate: Date = new Date(),
+  timezone?: string | null
 ): boolean {
   if (weddingDate === null || weddingDate === undefined || weddingDate === '') {
     return true;
   }
 
-  if (typeof weddingDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(weddingDate.trim())) {
-    const endOfDayUtc = new Date(`${weddingDate.trim()}T23:59:59.999Z`);
-    if (!Number.isNaN(endOfDayUtc.getTime())) {
-      return endOfDayUtc.getTime() >= referenceDate.getTime();
-    }
-  }
+  const resolvedTz = resolveVenueTimezone(timezone);
+  const normalizedInput =
+    typeof weddingDate === 'number'
+      ? Number.isFinite(weddingDate)
+        ? new Date(weddingDate)
+        : null
+      : weddingDate;
 
-  const parsed = weddingDate instanceof Date ? weddingDate : new Date(weddingDate);
-  if (Number.isNaN(parsed.getTime())) {
+  if (!normalizedInput) {
     return true;
   }
 
-  const endOfDayUtc = Date.UTC(
-    parsed.getUTCFullYear(),
-    parsed.getUTCMonth(),
-    parsed.getUTCDate(),
-    23,
-    59,
-    59,
-    999
-  );
-  return endOfDayUtc >= referenceDate.getTime();
+  const { date: venueDateStr } = extractVenueDateAndTime(normalizedInput, resolvedTz);
+  if (!venueDateStr) {
+    return true;
+  }
+
+  const endMinuteInstant = resolveVenueDateTimeInstant(venueDateStr, '23:59', resolvedTz);
+  if (!endMinuteInstant) {
+    return true;
+  }
+
+  const endOfDayMs = Math.trunc(endMinuteInstant.getTime() / 1000) * 1000 + 59_999;
+  return endOfDayMs >= referenceDate.getTime();
 }
 
 export interface CleanVenueParts {
@@ -117,34 +125,7 @@ function formatWeddingDateDisplay(
   weddingDate: Date | string | null | undefined,
   timezone?: string | null
 ): string {
-  if (!weddingDate) return '';
-  let normalizedInput: Date | string = weddingDate;
-  if (typeof weddingDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(weddingDate.trim())) {
-    normalizedInput = `${weddingDate.trim()}T12:00:00.000Z`;
-  }
-  const parsed = normalizedInput instanceof Date ? normalizedInput : new Date(normalizedInput);
-  if (Number.isNaN(parsed.getTime())) return '';
-
-  const resolvedTz =
-    typeof weddingDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(weddingDate.trim())
-      ? 'UTC'
-      : timezone?.trim() || 'UTC';
-
-  try {
-    return formatDate(parsed, {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-      timeZone: resolvedTz,
-    });
-  } catch {
-    return formatDate(parsed, {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-      timeZone: 'UTC',
-    });
-  }
+  return formatVenueWeddingDate(weddingDate, timezone);
 }
 
 export interface SetupStarterCopyInput {
@@ -179,7 +160,11 @@ export function synthesizeSetupStarterCopy(input: SetupStarterCopyInput): Synthe
   });
 
   const formattedDate = formatWeddingDateDisplay(input.weddingDate, input.timezone);
-  const isUpcoming = isUpcomingWeddingDate(input.weddingDate, input.referenceDate);
+  const isUpcoming = isUpcomingWeddingDate(
+    input.weddingDate,
+    input.referenceDate,
+    input.timezone
+  );
 
   const locationClause =
     venue.venueName && venue.cityState

@@ -319,6 +319,56 @@ describe('Weather API Route', () => {
       expect(requestedUrl).toContain('latitude=40.7128');
       expect(requestedUrl).toContain('longitude=-74.006');
     });
+
+    it('queries start_date=2027-06-20&end_date=2027-06-20 and computes liveForecastAvailableDate as 2027-06-04 without double timezone shifts', async () => {
+      for (const scenario of [
+        {
+          label: 'zoned 16:00 CDT ceremony',
+          weddingDate: new Date('2027-06-20T21:00:00.000Z'),
+          timezone: 'America/Chicago',
+        },
+        {
+          label: 'legacy T00:00:00.000Z row in America/Chicago',
+          weddingDate: new Date('2027-06-20T00:00:00.000Z'),
+          timezone: 'America/Chicago',
+        },
+        {
+          label: 'evening 19:30 PDT ceremony in America/Los_Angeles',
+          weddingDate: new Date('2027-06-21T02:30:00.000Z'),
+          timezone: 'America/Los_Angeles',
+        },
+      ]) {
+        mockGetAppConfig.mockResolvedValue({
+          ...APP_DEFAULTS,
+          weddingDate: scenario.weddingDate,
+          timezone: scenario.timezone,
+          latitude: 41.8781,
+          longitude: -87.6298,
+          modules: { weather: { enabled: true } },
+        } as any);
+
+        let requestedClimateUrl = '';
+        server.use(
+          http.get('https://climate-api.open-meteo.com/v1/climate', ({ request }) => {
+            requestedClimateUrl = request.url;
+            return HttpResponse.json({
+              daily: {
+                time: ['2027-06-20'],
+                temperature_2m_max: [81],
+                temperature_2m_min: [64],
+                apparent_temperature_max: [80],
+                precipitation_sum: [0],
+                wind_speed_10m_max: [9],
+              },
+            });
+          })
+        );
+
+        const result = await getWeatherForecast();
+        expect(requestedClimateUrl).toContain('start_date=2027-06-20&end_date=2027-06-20');
+        expect(result.liveForecastAvailableDate).toBe('2027-06-04');
+      }
+    });
   });
 });
 
